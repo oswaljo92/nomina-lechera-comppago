@@ -127,6 +127,9 @@ a { color: var(--verde-600); }
 }
 .marca strong { color: #fff; font-size: 16px; display: block; letter-spacing: -0.02em; }
 .marca span { font-size: 11.5px; color: #8fb3a3; }
+/* Visible solo en el tramo tableta (ver media query más abajo), donde
+   reemplaza el texto de marca que no cabe en el riel angosto. */
+.boton-menu { display: none; width: 100%; border: 0; background: transparent; color: #fff; }
 
 .nav { padding: 10px 8px; flex: 1; }
 .nav button {
@@ -183,6 +186,39 @@ a { color: var(--verde-600); }
 .chip-usuario .perfil { color: #fff; font-weight: 600; font-size: 13px; display: block; }
 .chip-usuario .rol { font-size: 11px; color: #8fb3a3; display: block; }
 .entorno { font-size: 11px; color: #8fb3a3; margin-top: 8px; padding: 0 2px; }
+
+/* Cajón de navegación: solo se activa en el tramo tableta (media query más
+   abajo). Fuera de ese rango queda inerte, sin importar el estado de React,
+   así que no hace falta ningún listener de resize para cerrarlo al agrandar
+   la ventana. */
+.fondo-menu { display: none; }
+.cajon-nav {
+  background: var(--verde-900);
+  color: #cfe5da;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  box-shadow: var(--sombra-alta);
+}
+.cajon-cabecera {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 16px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.cajon-cabecera strong { color: #fff; font-size: 15px; letter-spacing: -0.02em; }
+.cajon-cabecera .cerrar {
+  border: 0;
+  background: transparent;
+  color: #cfe5da;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px 8px;
+}
+.cajon-cabecera .cerrar:hover { color: #fff; }
 
 .principal { flex: 1; overflow-y: auto; overflow-x: hidden; }
 .contenido {
@@ -290,9 +326,8 @@ a { color: var(--verde-600); }
   display: flex;
   gap: 8px;
   margin-bottom: 16px;
-  overflow-x: auto;
+  flex-wrap: wrap;
   padding-bottom: 4px;
-  scrollbar-width: thin;
 }
 .pestanas .btn { flex: 0 0 auto; }
 
@@ -725,9 +760,11 @@ table.tabla tfoot td {
 @media (max-width: 1023px) and (min-width: 640px) {
   :root { --ancho-lateral: 68px; }
 
-  .marca { padding: 16px 8px; text-align: center; }
-  .marca strong { font-size: 13px; }
+  .marca { padding: 10px 8px; text-align: center; }
+  .marca strong { display: none; }
   .marca span { display: none; }
+  .boton-menu { display: flex; align-items: center; justify-content: center; min-height: var(--toque); font-size: 20px; border-radius: var(--radio-s); cursor: pointer; }
+  .boton-menu:hover { background: rgba(255, 255, 255, 0.08); }
 
   .nav { padding: 8px 6px; }
   .nav button {
@@ -738,7 +775,6 @@ table.tabla tfoot td {
     text-align: center;
   }
   .nav .etiqueta-nav { display: none; }
-  .nav .etiqueta-corta { display: block; font-size: 9.5px; line-height: 1.1; }
   .nav .icono { width: auto; font-size: 17px; }
   .nav .cuenta {
     position: absolute;
@@ -755,6 +791,30 @@ table.tabla tfoot td {
   .entorno { display: none; }
 
   .contenido { padding: 18px 18px 50px; }
+
+  /* Cajón que abre el botón hamburguesa: menú completo con etiquetas, como
+     en escritorio, superpuesto en vez de permanente por falta de espacio. */
+  .fondo-menu.abierto {
+    display: flex;
+    position: fixed;
+    inset: 0;
+    background: rgba(11, 20, 16, 0.55);
+    z-index: 90;
+  }
+  .cajon-nav { width: 232px; max-width: 82vw; }
+
+  .cajon-nav .nav { padding: 10px 8px; }
+  .cajon-nav .nav button {
+    flex-direction: row;
+    gap: 10px;
+    padding: 9px 11px;
+    min-height: 0;
+    text-align: left;
+  }
+  .cajon-nav .nav .etiqueta-nav { display: block; }
+  .cajon-nav .nav .etiqueta-corta { display: none; }
+  .cajon-nav .nav .icono { width: 18px; font-size: 14px; }
+  .cajon-nav .nav .cuenta { position: static; margin-left: auto; top: auto; right: auto; font-size: 11px; padding: 0 7px; }
 }
 
 /* ═══════════════════════════════════════════════════════════
