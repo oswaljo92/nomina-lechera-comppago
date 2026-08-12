@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "lib": ["ES2022"]
+  },
+  "include": ["scripts", "src/core"],
+  // Solo se usa desde el navegador y depende de importaciones «?url» propias de
+  // Vite, que no existen bajo Node.
+  "exclude": ["src/core/parser/cargarPdf.ts"]
+}

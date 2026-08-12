@@ -1,0 +1,504 @@
+import { fechaAMostrar, formatearBs, formatearDecimal, formatearEntero } from '../parser/numeros.ts';
+import type { DatosComprobante } from './comprobante.ts';
+
+/**
+ * Descripción del comprobante como una lista de primitivas de dibujo.
+ *
+ * El primer intento fotografiaba el DOM con html-to-image. Se descartó por un
+ * motivo concreto: esa técnica rasteriza mediante un <foreignObject> de SVG,
+ * que el navegador solo resuelve mientras la página se está pintando. Bastaba
+ * con minimizar la ventana o cambiar de pestaña para que un lote de decenas de
+ * comprobantes se quedara congelado a la espera.
+ *
+ * Dibujando explícitamente se gana además que el PDF lleve texto de verdad
+ * —seleccionable y buscable— en lugar de una imagen, y que el paquete pese
+ * bastante menos al no arrastrar el rasterizador.
+ *
+ * Las coordenadas van en PUNTOS tipográficos sobre una página A4 vertical, que
+ * es la unidad nativa del PDF. El renderizador de canvas solo multiplica por la
+ * escala que necesite.
+ */
+
+/** Ancho A4 vertical en puntos. El alto se ajusta al contenido. */
+export const ANCHO_PT = 595.28;
+/** Alto mínimo, para que un comprobante corto siga pareciendo un documento. */
+const ALTO_MINIMO_PT = 500;
+const MARGEN = 40;
+const ANCHO_UTIL = ANCHO_PT - MARGEN * 2;
+
+/**
+ * El signo menos tipográfico (−) no existe en la codificación de las fuentes
+ * estándar del PDF. Se usa el guion normal para que la imagen y el PDF salgan
+ * idénticos carácter por carácter.
+ */
+const MENOS = '-';
+
+export const COLORES = {
+  tinta: '#16211c',
+  tenue: '#55635b',
+  suave: '#7d8a82',
+  verde: '#0f2e24',
+  verdeClaro: '#dcf0e6',
+  linea: '#dfe3dd',
+  lineaFuerte: '#c3cabf',
+  blanco: '#ffffff',
+  aviso: '#7a4d00',
+  avisoFondo: '#fdf1dc',
+  error: '#8c1d18',
+  errorFondo: '#fbe6e4',
+  panel: '#fbfcfa',
+} as const;
+
+export type Alineacion = 'izq' | 'der' | 'centro';
+export type Peso = 'normal' | 'bold';
+
+export type Primitiva =
+  | {
+      tipo: 'rect';
+      x: number;
+      y: number;
+      ancho: number;
+      alto: number;
+      relleno?: string;
+      borde?: string;
+      grosor?: number;
+      radio?: number;
+    }
+  | { tipo: 'linea'; x1: number; y1: number; x2: number; y2: number; color: string; grosor: number }
+  | {
+      tipo: 'texto';
+      x: number;
+      /** Línea base del texto. */
+      y: number;
+      texto: string;
+      tam: number;
+      peso: Peso;
+      color: string;
+      alineacion: Alineacion;
+    }
+  | { tipo: 'imagen'; x: number; y: number; ancho: number; alto: number; dataUrl: string };
+
+/** Mide el ancho de un texto. Lo provee cada renderizador. */
+export type Medidor = (texto: string, tam: number, peso: Peso) => number;
+
+export interface OpcionesDibujo {
+  mostrarLitrosDia: boolean;
+  mostrarBanco: boolean;
+  mostrarNotaDebito: boolean;
+}
+
+export const OPCIONES_DIBUJO: OpcionesDibujo = {
+  mostrarLitrosDia: false,
+  mostrarBanco: false,
+  mostrarNotaDebito: true,
+};
+
+class Lienzo {
+  primitivas: Primitiva[] = [];
+  private medir: Medidor;
+
+  constructor(medir: Medidor) {
+    this.medir = medir;
+  }
+
+  rect(p: Omit<Extract<Primitiva, { tipo: 'rect' }>, 'tipo'>): void {
+    this.primitivas.push({ tipo: 'rect', ...p });
+  }
+
+  linea(x1: number, y: number, x2: number, color: string = COLORES.linea, grosor = 0.6): void {
+    this.primitivas.push({ tipo: 'linea', x1, y1: y, x2, y2: y, color, grosor });
+  }
+
+  texto(
+    texto: string,
+    x: number,
+    y: number,
+    opciones: { tam?: number; peso?: Peso; color?: string; alineacion?: Alineacion } = {},
+  ): void {
+    if (!texto) return;
+    this.primitivas.push({
+      tipo: 'texto',
+      x,
+      y,
+      texto,
+      tam: opciones.tam ?? 9,
+      peso: opciones.peso ?? 'normal',
+      color: opciones.color ?? COLORES.tinta,
+      alineacion: opciones.alineacion ?? 'izq',
+    });
+  }
+
+  imagen(dataUrl: string, x: number, y: number, ancho: number, alto: number): void {
+    this.primitivas.push({ tipo: 'imagen', x, y, ancho, alto, dataUrl });
+  }
+
+  /** Parte un texto en las líneas que quepan en `ancho`. */
+  partir(texto: string, ancho: number, tam: number, peso: Peso = 'normal'): string[] {
+    const palabras = texto.split(/\s+/).filter(Boolean);
+    const lineas: string[] = [];
+    let actual = '';
+    for (const palabra of palabras) {
+      const tentativa = actual ? `${actual} ${palabra}` : palabra;
+      if (this.medir(tentativa, tam, peso) <= ancho || actual === '') {
+        actual = tentativa;
+      } else {
+        lineas.push(actual);
+        actual = palabra;
+      }
+    }
+    if (actual) lineas.push(actual);
+    return lineas;
+  }
+
+  /** Recorta con puntos suspensivos si no cabe. */
+  recortar(texto: string, ancho: number, tam: number, peso: Peso = 'normal'): string {
+    if (this.medir(texto, tam, peso) <= ancho) return texto;
+    let corto = texto;
+    while (corto.length > 1 && this.medir(`${corto}…`, tam, peso) > ancho) {
+      corto = corto.slice(0, -1);
+    }
+    return `${corto}…`;
+  }
+}
+
+export interface Hoja {
+  primitivas: Primitiva[];
+  /** Alto en puntos, calculado a partir del contenido. */
+  alto: number;
+}
+
+export function dibujarComprobante(
+  datos: DatosComprobante,
+  opciones: OpcionesDibujo,
+  medir: Medidor,
+): Hoja {
+  const l = new Lienzo(medir);
+  const izq = MARGEN;
+  const der = ANCHO_PT - MARGEN;
+  let y = MARGEN;
+
+  // ── Encabezado de la empresa ──
+  const altoLogo = 62;
+  const xTextoEmpresa = izq + (datos.empresa?.logo ? altoLogo + 14 : 0);
+
+  if (datos.empresa?.logo) {
+    l.imagen(datos.empresa.logo, izq, y, altoLogo, altoLogo);
+  }
+
+  let yEmpresa = y + 13;
+  l.texto(
+    l.recortar(datos.empresa?.razonSocial ?? 'EMPRESA SIN CONFIGURAR', der - xTextoEmpresa, 14, 'bold'),
+    xTextoEmpresa,
+    yEmpresa,
+    { tam: 14, peso: 'bold', color: COLORES.verde },
+  );
+  yEmpresa += 14;
+  l.texto(`RIF: ${datos.empresa?.rif ?? '—'}`, xTextoEmpresa, yEmpresa, {
+    tam: 9,
+    peso: 'bold',
+    color: COLORES.tenue,
+  });
+  yEmpresa += 11;
+  for (const linea of l.partir(datos.empresa?.direccionFiscal ?? '', der - xTextoEmpresa, 8.5)) {
+    l.texto(linea, xTextoEmpresa, yEmpresa, { tam: 8.5, color: COLORES.tenue });
+    yEmpresa += 10;
+  }
+  const contacto = [datos.empresa?.telefono, datos.empresa?.email].filter(Boolean).join('   ·   ');
+  if (contacto) {
+    l.texto(contacto, xTextoEmpresa, yEmpresa, { tam: 8.5, color: COLORES.tenue });
+    yEmpresa += 10;
+  }
+
+  y = Math.max(y + altoLogo, yEmpresa) + 6;
+  l.linea(izq, y, der, COLORES.verde, 2.2);
+  y += 16;
+
+  // ── Aviso si la fábrica no tiene empresa ──
+  if (!datos.empresa) {
+    const alto = 26;
+    l.rect({
+      x: izq,
+      y: y - 10,
+      ancho: ANCHO_UTIL,
+      alto,
+      relleno: COLORES.avisoFondo,
+      borde: COLORES.aviso,
+      grosor: 0.6,
+      radio: 4,
+    });
+    l.texto(
+      l.recortar(
+        `La fábrica ${datos.fabricaCod} ${datos.fabricaNom} no tiene empresa asignada en Ajustes.`,
+        ANCHO_UTIL - 16,
+        8.5,
+      ),
+      izq + 8,
+      y + 6,
+      { tam: 8.5, color: COLORES.aviso },
+    );
+    y += alto + 8;
+  }
+
+  // ── Identificación del documento ──
+  l.texto('COMPROBANTE DE PAGO', izq, y, { tam: 13, peso: 'bold', color: COLORES.verde });
+  l.texto('FOLIO', der, y - 8, { tam: 7, peso: 'bold', color: COLORES.suave, alineacion: 'der' });
+  l.texto(datos.folio, der, y + 2, { tam: 12, peso: 'bold', color: COLORES.verde, alineacion: 'der' });
+  y += 14;
+  l.texto(
+    `Nómina Nº ${datos.numero}  ·  Año ${datos.anio}  ·  del ${fechaAMostrar(datos.fechaIni)} al ${fechaAMostrar(datos.fechaFin)}`,
+    izq,
+    y,
+    { tam: 9, color: COLORES.tenue },
+  );
+  y += 11;
+  l.texto(
+    `${datos.tipo === 'leche' ? 'Pago de Leche Fresca' : 'Nómina de Rutas (transporte)'}  ·  Fábrica ${datos.fabricaCod} ${datos.fabricaNom}`,
+    izq,
+    y,
+    { tam: 9, color: COLORES.tenue },
+  );
+  y += 10;
+  l.linea(izq, y, der);
+  y += 18;
+
+  // ── Proveedor ──
+  l.texto(l.recortar(datos.proveedor.nombre, ANCHO_UTIL, 13, 'bold'), izq, y, {
+    tam: 13,
+    peso: 'bold',
+  });
+  y += 14;
+
+  const campos: [string, string][] = [
+    [datos.tipo === 'leche' ? 'CÓDIGO GANADERO' : 'CÓDIGO DE RUTA', datos.proveedor.codigo],
+    ['RUTA', datos.proveedor.ruta],
+    ['CÉDULA', datos.proveedor.cedula ?? '—'],
+    ['RIF', datos.proveedor.rif ?? '—'],
+  ];
+  if (opciones.mostrarBanco) {
+    campos.push(['BANCO', datos.proveedor.banco ?? '—']);
+    campos.push(['CUENTA', datos.proveedor.cuenta ?? '—']);
+  }
+
+  const porFila = 4;
+  const anchoCampo = ANCHO_UTIL / porFila;
+  campos.forEach((campo, i) => {
+    const fila = Math.floor(i / porFila);
+    const col = i % porFila;
+    const x = izq + col * anchoCampo;
+    const yy = y + fila * 26;
+    l.texto(campo[0], x, yy, { tam: 6.5, peso: 'bold', color: COLORES.suave });
+    l.texto(l.recortar(campo[1], anchoCampo - 8, 9.5, 'bold'), x, yy + 11, {
+      tam: 9.5,
+      peso: 'bold',
+    });
+  });
+  y += Math.ceil(campos.length / porFila) * 26 + 4;
+  l.linea(izq, y, der);
+  y += 16;
+
+  // ── Litros ──
+  if (datos.litrosTotal !== null) {
+    l.texto('LITROS DE LA SEMANA', izq, y, { tam: 6.5, peso: 'bold', color: COLORES.suave });
+    y += 15;
+    l.texto(formatearEntero(datos.litrosTotal), izq, y, { tam: 17, peso: 'bold' });
+    const anchoNumero = medir(formatearEntero(datos.litrosTotal), 17, 'bold');
+    l.texto('litros', izq + anchoNumero + 6, y, { tam: 9.5, peso: 'bold', color: COLORES.tenue });
+    y += 6;
+
+    if (opciones.mostrarLitrosDia && datos.litrosDia.length > 0) {
+      y += 10;
+      let x = izq;
+      for (const dia of datos.litrosDia) {
+        const etiqueta = `${fechaAMostrar(dia.fecha).slice(0, 5)}  ${formatearEntero(dia.litros)}`;
+        const ancho = medir(etiqueta, 8, 'normal') + 14;
+        if (x + ancho > der) {
+          x = izq;
+          y += 18;
+        }
+        l.rect({
+          x,
+          y: y - 9,
+          ancho,
+          alto: 15,
+          relleno: COLORES.panel,
+          borde: COLORES.linea,
+          grosor: 0.6,
+          radio: 3,
+        });
+        l.texto(etiqueta, x + 7, y + 1, { tam: 8, color: COLORES.tinta });
+        x += ancho + 5;
+      }
+      y += 8;
+    }
+    y += 14;
+  }
+
+  // ── Conceptos ──
+  const xCodigo = izq;
+  const xNombre = izq + 42;
+  const xMonto = der;
+
+  l.texto('CONCEPTOS', izq, y, { tam: 6.5, peso: 'bold', color: COLORES.suave });
+  y += 14;
+
+  for (const linea of datos.pagos) {
+    l.texto(linea.codigo, xCodigo, y, { tam: 8, color: COLORES.tenue });
+    l.texto(l.recortar(linea.nombre, xMonto - xNombre - 110, 9.5), xNombre, y, { tam: 9.5 });
+    l.texto(formatearBs(linea.centimos), xMonto, y, { tam: 9.5, alineacion: 'der' });
+    y += 6;
+    l.linea(izq, y, der, '#eef1ed', 0.5);
+    y += 11;
+  }
+  l.linea(izq, y - 6, der, COLORES.lineaFuerte, 1);
+  l.texto('Bruto', xNombre, y + 5, { tam: 9.5, peso: 'bold' });
+  l.texto(formatearBs(datos.bruto), xMonto, y + 5, { tam: 9.5, peso: 'bold', alineacion: 'der' });
+  y += 22;
+
+  if (datos.deducciones.length > 0) {
+    for (const linea of datos.deducciones) {
+      l.texto(linea.codigo, xCodigo, y, { tam: 8, color: COLORES.tenue });
+      const nota = linea.restaFacturacion ? '' : '  ·  retención, no reduce lo facturable';
+      l.texto(l.recortar(linea.nombre + nota, xMonto - xNombre - 110, 9.5), xNombre, y, {
+        tam: 9.5,
+      });
+      l.texto(`${MENOS} ${formatearBs(linea.centimos)}`, xMonto, y, { tam: 9.5, alineacion: 'der' });
+      y += 6;
+      l.linea(izq, y, der, '#eef1ed', 0.5);
+      y += 11;
+    }
+    l.linea(izq, y - 6, der, COLORES.lineaFuerte, 1);
+    l.texto('Total deducciones', xNombre, y + 5, { tam: 9.5, peso: 'bold' });
+    l.texto(`${MENOS} ${formatearBs(datos.totalDeducciones)}`, xMonto, y + 5, {
+      tam: 9.5,
+      peso: 'bold',
+      alineacion: 'der',
+    });
+    y += 22;
+  }
+
+  // ── Totales ──
+  y += 6;
+  const nd = datos.notaDebito;
+  const mostrarNd = opciones.mostrarNotaDebito && nd !== null;
+  const filasTotales = 2 + (mostrarNd ? 1 : 0);
+  const altoFila = 26;
+  const altoDetalleNd = mostrarNd && nd?.aplica ? 16 : mostrarNd ? 16 : 0;
+  const altoCaja = filasTotales * altoFila + altoDetalleNd;
+
+  l.rect({
+    x: izq,
+    y,
+    ancho: ANCHO_UTIL,
+    alto: altoCaja,
+    borde: COLORES.verde,
+    grosor: 1.4,
+    radio: 5,
+  });
+
+  // Neto a pagar, destacado en negativo.
+  l.rect({ x: izq + 1, y: y + 1, ancho: ANCHO_UTIL - 2, alto: altoFila - 1, relleno: COLORES.verde });
+  l.texto('NETO A PAGAR', izq + 12, y + 17, { tam: 9.5, peso: 'bold', color: COLORES.blanco });
+  l.texto(`${formatearBs(datos.neto)} Bs`, der - 12, y + 18, {
+    tam: 13,
+    peso: 'bold',
+    color: COLORES.blanco,
+    alineacion: 'der',
+  });
+  y += altoFila;
+
+  l.rect({ x: izq + 1, y, ancho: ANCHO_UTIL - 2, alto: altoFila, relleno: COLORES.verdeClaro });
+  l.linea(izq, y, der, COLORES.linea, 0.6);
+  l.texto('TOTAL A FACTURAR', izq + 12, y + 17, { tam: 9.5, peso: 'bold' });
+  l.texto(`${formatearBs(datos.totalFacturar)} Bs`, der - 12, y + 18, {
+    tam: 13,
+    peso: 'bold',
+    alineacion: 'der',
+  });
+  y += altoFila;
+
+  if (mostrarNd && nd) {
+    l.linea(izq, y, der, COLORES.linea, 0.6);
+    if (nd.aplica) {
+      l.texto('NOTA DE DÉBITO', izq + 12, y + 17, { tam: 9.5, peso: 'bold' });
+      l.texto(`${formatearBs(nd.centimos)} Bs`, der - 12, y + 18, {
+        tam: 13,
+        peso: 'bold',
+        alineacion: 'der',
+      });
+      y += altoFila;
+      const detalle =
+        `${formatearEntero(nd.litrosBase)} L × ${formatearDecimal(nd.precioUsd, 4)} $/L × ` +
+        `(${formatearDecimal(nd.tasaFin)} ${MENOS} ${formatearDecimal(nd.tasaIni)})   ·   ` +
+        `Factura ${fechaAMostrar(nd.fechaFactura)}   ·   Nota de débito ${fechaAMostrar(nd.fechaNota)}   ·   ` +
+        `tasa del ${fechaAMostrar(nd.fechaTasaFin)}`;
+      l.texto(l.recortar(detalle, ANCHO_UTIL - 24, 7.5), izq + 12, y + 4, {
+        tam: 7.5,
+        color: COLORES.tenue,
+      });
+      y += altoDetalleNd;
+    } else {
+      l.rect({ x: izq + 1, y, ancho: ANCHO_UTIL - 2, alto: altoFila + altoDetalleNd, relleno: COLORES.errorFondo });
+      l.texto('NOTA DE DÉBITO', izq + 12, y + 16, { tam: 9.5, peso: 'bold', color: COLORES.error });
+      for (const [i, linea] of l
+        .partir(`No calculada: ${nd.motivo}`, ANCHO_UTIL - 24, 7.5)
+        .slice(0, 2)
+        .entries()) {
+        l.texto(linea, izq + 12, y + 27 + i * 9, { tam: 7.5, color: COLORES.error });
+      }
+      y += altoFila + altoDetalleNd;
+    }
+  }
+
+  y += 18;
+
+  // ── Conceptos manuales, informativos ──
+  if (datos.manuales.length > 0) {
+    const alto = 30 + datos.manuales.length * 14;
+    l.rect({
+      x: izq,
+      y,
+      ancho: ANCHO_UTIL,
+      alto,
+      relleno: COLORES.panel,
+      borde: COLORES.lineaFuerte,
+      grosor: 0.6,
+      radio: 5,
+    });
+    l.texto('CONCEPTOS ADICIONALES', izq + 12, y + 14, {
+      tam: 6.5,
+      peso: 'bold',
+      color: COLORES.suave,
+    });
+    let yy = y + 27;
+    for (const m of datos.manuales) {
+      l.texto(m.codigo, izq + 12, yy, { tam: 8, color: COLORES.tenue });
+      const etiqueta = m.litros !== null ? `${m.nombre}  ·  ${formatearEntero(m.litros)} L` : m.nombre;
+      l.texto(l.recortar(etiqueta, ANCHO_UTIL - 190, 9), xNombre + 12, yy, { tam: 9 });
+      l.texto(formatearBs(m.centimos), der - 12, yy, { tam: 9, alineacion: 'der' });
+      yy += 14;
+    }
+    l.texto(
+      'Información de referencia. No afecta el bruto, el neto a pagar ni el total a facturar.',
+      izq + 12,
+      yy - 1,
+      { tam: 7, color: COLORES.suave },
+    );
+    y += alto + 14;
+  }
+
+  // ── Pie ──
+  // La hoja se ajusta al contenido en lugar de forzar un A4 completo. Un
+  // comprobante corto dejaría media página en blanco, que al enviarse por
+  // WhatsApp se ve como una imagen medio vacía.
+  const yPie = Math.max(y + 14, ALTO_MINIMO_PT - MARGEN - 12);
+  l.linea(izq, yPie - 10, der);
+  l.texto(
+    `Documento generado por CompPago a partir del reporte ${datos.tipo === 'leche' ? 'Gan0584' : 'Gan0594'}.`,
+    izq,
+    yPie,
+    { tam: 7, color: COLORES.suave },
+  );
+  l.texto(`Folio ${datos.folio}`, der, yPie, { tam: 7, color: COLORES.suave, alineacion: 'der' });
+
+  return { primitivas: l.primitivas, alto: Math.round(yPie + MARGEN - 8) };
+}

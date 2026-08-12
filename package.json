@@ -1,0 +1,68 @@
+{
+  "name": "nomina-lechera-comppago",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Nómina Lechera CompPago — lector de nóminas ganaderas y generador de comprobantes de pago",
+  "type": "module",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "vite",
+    "build": "npm run check && vite build",
+    "preview": "vite preview",
+    "check": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.scripts.json --noEmit",
+    "test:parser": "node --experimental-strip-types scripts/test-parser.ts",
+    "electron:dev": "concurrently -k \"vite\" \"wait-on tcp:5173 && electron .\"",
+    "electron:build": "npm run build && electron-builder --win dir && node scripts/pack-desktop.mjs",
+    "test:core": "node scripts/test-core.ts"
+  },
+  "dependencies": {
+    "jspdf": "^4.2.1",
+    "jszip": "^3.10.1",
+    "pdfjs-dist": "^4.10.38",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "sql.js": "^1.12.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "@types/react": "^19.0.7",
+    "@types/react-dom": "^19.0.3",
+    "@types/sql.js": "^1.4.9",
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.2",
+    "electron": "^33.3.1",
+    "electron-builder": "^25.1.8",
+    "typescript": "^5.7.3",
+    "vite": "^6.0.7",
+    "wait-on": "^8.0.2"
+  },
+  "build": {
+    "appId": "com.comppago.nominalechera",
+    "productName": "Nómina Lechera CompPago",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "dir",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "requestedExecutionLevel": "asInvoker",
+      "signAndEditExecutable": false,
+      "executableName": "CompPago",
+      "artifactName": "CompPago-${version}.${ext}"
+    },
+    "electronDownload": {
+      "cache": ".electron-cache"
+    }
+  }
+}

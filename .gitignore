@@ -1,0 +1,17 @@
+node_modules/
+dist/
+release/
+.electron-cache/
+datos/
+*.local
+.DS_Store
+Thumbs.db
+
+# Datos reales de proveedores (cédulas, RIF, cuentas bancarias) — nunca al historial de git
+/GAN0584_3.pdf
+/GAN0594_3.pdf
+fixtures/*.pdf
+
+# Configuración local de esta máquina (permisos de Claude Code, rutas locales)
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
