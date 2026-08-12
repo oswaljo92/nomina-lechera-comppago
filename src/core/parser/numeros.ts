@@ -134,6 +134,16 @@ export function fechaAMostrar(iso: string | null | undefined): string {
   return `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
 }
 
+/** "2026-06-03" -> "Miércoles" */
+export function nombreDia(iso: string): string {
+  if (!esFechaValida(iso)) return '—';
+  const nombre = new Date(`${iso}T00:00:00Z`).toLocaleDateString('es-VE', {
+    weekday: 'long',
+    timeZone: 'UTC',
+  });
+  return nombre.charAt(0).toUpperCase() + nombre.slice(1);
+}
+
 /** Días del rango [ini, fin] inclusive, en ISO. */
 export function diasEntre(ini: string, fin: string): string[] {
   if (!esFechaValida(ini) || !esFechaValida(fin)) return [];

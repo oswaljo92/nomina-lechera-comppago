@@ -16,6 +16,7 @@
     "test:core": "node scripts/test-core.ts"
   },
   "dependencies": {
+    "exceljs": "^4.4.0",
     "jspdf": "^4.2.1",
     "jszip": "^3.10.1",
     "pdfjs-dist": "^4.10.38",
