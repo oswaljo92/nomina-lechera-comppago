@@ -7,6 +7,11 @@ export type Fila = Record<string, SqlValue>;
 
 let motor: SqlJsStatic | null = null;
 
+/** Comprueba la cabecera estándar de SQLite, sin llegar a abrir el archivo. */
+export function esArchivoSqlite(bytes: Uint8Array): boolean {
+  return new TextDecoder().decode(bytes.slice(0, 15)) === 'SQLite format 3';
+}
+
 /**
  * Lee la versión del esquema sin asumir que las tablas existan: un archivo
  * recién creado no tiene ni siquiera `meta`, y una base de otra versión podría

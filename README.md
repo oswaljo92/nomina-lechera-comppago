@@ -9,25 +9,6 @@ usando la aplicación con la conexión apagada.
 
 ---
 
-## Qué lee
-
-| Reporte | Título | Contenido |
-|---|---|---|
-| **Gan0584** | PAGO DE LECHE FRESCA | Proveedores de leche |
-| **Gan0594** | NOMINA DE RUTAS | Transportistas |
-
-Ambos traen capa de texto, así que **no se usa OCR**: se leen las coordenadas
-reales de cada celda con `pdf.js`. Eso da fidelidad exacta en los montos, que
-con reconocimiento óptico no está garantizada.
-
-Sobre los reportes de referencia (nómina 23 de 2026) la lectura cuadra al
-céntimo contra los totales que el propio PDF imprime:
-
-```
-GAN0584   76 proveedores   369.776.187,91 Bs   = «Total General» del PDF
-GAN0594   16 rutas          19.952.738,12 Bs   = suma de «Total Fábrica»
-```
-
 ## Los cuatro números del comprobante
 
 ```

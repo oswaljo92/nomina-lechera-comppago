@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useApp } from '../estado.tsx';
 import { Aviso } from '../components/comunes.tsx';
+import { useRespaldarYBorrar } from '../components/RespaldarYBorrar.tsx';
 
 /**
  * Pantalla que aparece cuando el archivo guardado pertenece a una versión
@@ -12,7 +13,12 @@ import { Aviso } from '../components/comunes.tsx';
  */
 export function BaseAnterior() {
   const { db, plataforma, reemplazarBase } = useApp();
-  const [respaldada, setRespaldada] = useState(false);
+  const { respaldado, descargarRespaldo, borrarTodo } = useRespaldarYBorrar(
+    db,
+    plataforma,
+    reemplazarBase,
+    `comppago_version${db.versionArchivo}`,
+  );
   const [confirmando, setConfirmando] = useState(false);
 
   return (
@@ -37,25 +43,11 @@ export function BaseAnterior() {
             después con cualquier herramienta aunque esta aplicación ya no lo abra.
           </p>
 
-          <button
-            className="btn ancho"
-            onClick={() => {
-              const fecha = new Date().toISOString().slice(0, 10);
-              const bytes = db.exportar();
-              void plataforma.archivos
-                .guardar(
-                  `comppago_version${db.versionArchivo}_${fecha}.db`,
-                  new Blob([new Uint8Array(bytes) as unknown as ArrayBufferView<ArrayBuffer>], {
-                    type: 'application/octet-stream',
-                  }),
-                )
-                .then(() => setRespaldada(true));
-            }}
-          >
+          <button className="btn ancho" onClick={descargarRespaldo}>
             ⬇ Descargar copia de los datos actuales
           </button>
 
-          {respaldada && (
+          {respaldado && (
             <Aviso nivel="ok">
               Copia descargada. Ya puedes reemplazar la base con tranquilidad.
             </Aviso>
@@ -68,10 +60,7 @@ export function BaseAnterior() {
               <button className="btn" onClick={() => setConfirmando(false)}>
                 Cancelar
               </button>
-              <button
-                className="btn peligro crece"
-                onClick={() => void reemplazarBase(null)}
-              >
+              <button className="btn peligro crece" onClick={borrarTodo}>
                 Sí, borrar y empezar de cero
               </button>
             </div>

@@ -24,6 +24,8 @@ import {
   type Paquete,
 } from '../../core/sync/paquete.ts';
 import { fechaAMostrar, formatearBs } from '../../core/parser/numeros.ts';
+import { esArchivoSqlite } from '../../core/db/basedatos.ts';
+import { useRespaldarYBorrar } from '../components/RespaldarYBorrar.tsx';
 import type { ConceptoCatalogo, Empresa, TipoNomina } from '../../core/types.ts';
 
 type Pestana = 'empresas' | 'conceptos' | 'nombres' | 'usuarios' | 'datos' | 'sistema';
@@ -844,6 +846,13 @@ function SeccionDatos() {
   const [informe, setInforme] = useState<{ paquete: Paquete; informe: Informe } | null>(null);
   const [mensaje, setMensaje] = useState<{ nivel: 'ok' | 'error'; texto: string } | null>(null);
   const [confirmarRestaurar, setConfirmarRestaurar] = useState<Uint8Array | null>(null);
+  const [confirmarBorrado, setConfirmarBorrado] = useState(false);
+  const { respaldado: respaldadoParaBorrar, descargarRespaldo, borrarTodo } = useRespaldarYBorrar(
+    db,
+    plataforma,
+    reemplazarBase,
+    'respaldo_antes_de_borrar_comppago',
+  );
 
   return (
     <>
@@ -966,8 +975,7 @@ function SeccionDatos() {
             onClick={() => {
               void plataforma.archivos.abrir('.db').then((archivo) => {
                 if (!archivo) return;
-                const cabecera = new TextDecoder().decode(archivo.bytes.slice(0, 15));
-                if (cabecera !== 'SQLite format 3') {
+                if (!esArchivoSqlite(archivo.bytes)) {
                   setMensaje({
                     nivel: 'error',
                     texto: 'Ese archivo no es una base de datos de CompPago.',
@@ -988,6 +996,33 @@ function SeccionDatos() {
         <div className="sep" />
         <Dato etiqueta="Los datos viven en" valor={plataforma.db.ubicacion()} pequeno />
       </Tarjeta>
+
+      {puedo('restaurar-respaldo') && (
+        <Tarjeta
+          titulo="Zona de peligro"
+          descripcion="Vacía la base entera de este equipo para empezar de cero, como en una instalación nueva."
+        >
+          <Aviso nivel="aviso" titulo="Qué se borra">
+            Nóminas, usuarios y contraseñas, empresas, tasas, catálogo clasificado y la bitácora.
+            No se puede deshacer. Descarga un respaldo antes de continuar.
+          </Aviso>
+          <div className="acciones" style={{ marginTop: 12 }}>
+            <button className="btn" onClick={descargarRespaldo}>
+              ⬇ Descargar respaldo
+            </button>
+            <button
+              className="btn peligro"
+              disabled={!respaldadoParaBorrar}
+              onClick={() => setConfirmarBorrado(true)}
+            >
+              Empezar de cero
+            </button>
+          </div>
+          {respaldadoParaBorrar && (
+            <Aviso nivel="ok">Respaldo descargado. Ya puedes empezar de cero si quieres.</Aviso>
+          )}
+        </Tarjeta>
+      )}
 
       {informe && usuario && (
         <ModalImportar
@@ -1015,6 +1050,17 @@ function SeccionDatos() {
           mensaje="Se descartará por completo la base actual de este equipo —nóminas, usuarios, empresas, tasas y bitácora— y se sustituirá por la del archivo. Esto no se puede deshacer."
           alCerrar={() => setConfirmarRestaurar(null)}
           alConfirmar={() => void reemplazarBase(confirmarRestaurar)}
+        />
+      )}
+
+      {confirmarBorrado && (
+        <Confirmar
+          titulo="Empezar de cero"
+          peligro
+          textoConfirmar="Sí, borrar todo"
+          mensaje="Se borrará por completo la base de este equipo —nóminas, usuarios, empresas, tasas y bitácora— y la aplicación quedará como recién instalada. Esto no se puede deshacer."
+          alCerrar={() => setConfirmarBorrado(false)}
+          alConfirmar={borrarTodo}
         />
       )}
     </>
