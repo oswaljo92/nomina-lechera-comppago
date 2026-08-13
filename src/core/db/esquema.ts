@@ -170,6 +170,32 @@ CREATE TABLE IF NOT EXISTS nombres_full (
   PRIMARY KEY (tipo, codigo)
 );
 
+-- Vínculo persistente entre un proveedor de leche y una ruta de transporte
+-- que pertenecen a la misma persona. Se detecta comparando el RIF/cédula del
+-- PDF, pero se guarda por código —como precios_proveedor y nombres_full—
+-- para que no haga falta reconfirmarlo cada semana.
+CREATE TABLE IF NOT EXISTS vinculos_proveedor (
+  id                TEXT PRIMARY KEY,
+  codigo_leche      TEXT NOT NULL,
+  codigo_transporte TEXT NOT NULL,
+  estado            TEXT NOT NULL CHECK (estado IN ('confirmado','rechazado')),
+  -- Documento normalizado que motivó la sugerencia; solo para auditoría, no
+  -- participa en el emparejamiento una vez confirmado.
+  documento         TEXT,
+  usuario_id        TEXT NOT NULL,
+  creado_en         TEXT NOT NULL,
+  actualizado_en    TEXT NOT NULL,
+  UNIQUE (codigo_leche, codigo_transporte)
+);
+CREATE INDEX IF NOT EXISTS idx_vinculo_leche ON vinculos_proveedor(codigo_leche);
+CREATE INDEX IF NOT EXISTS idx_vinculo_transporte ON vinculos_proveedor(codigo_transporte);
+-- Un código de leche (o de transporte) solo puede tener UN vínculo
+-- confirmado a la vez. Los rechazados no cuentan.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_vinculo_leche_confirmado
+  ON vinculos_proveedor(codigo_leche) WHERE estado = 'confirmado';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_vinculo_transporte_confirmado
+  ON vinculos_proveedor(codigo_transporte) WHERE estado = 'confirmado';
+
 CREATE TABLE IF NOT EXISTS descargas (
   id          TEXT PRIMARY KEY,
   registro_id TEXT NOT NULL REFERENCES registros(id) ON DELETE CASCADE,

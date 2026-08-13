@@ -114,7 +114,10 @@ export function Tasas() {
   }
 
   async function descargarExcel() {
-    const bytes = await construirLibroTasas(filas);
+    // La tabla en pantalla queda como está; el Excel siempre sale ordenado
+    // de fecha menor a mayor, más fácil de revisar semana a semana.
+    const filasAscendentes = [...filas].sort((a, b) => a.fecha.localeCompare(b.fecha));
+    const bytes = await construirLibroTasas(filasAscendentes);
     const fechaHoy = new Date().toISOString().slice(0, 10);
     await plataforma.archivos.guardar(
       `tasas_comppago_${fechaHoy}.xlsx`,

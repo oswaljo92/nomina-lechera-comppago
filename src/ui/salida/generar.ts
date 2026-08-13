@@ -18,11 +18,12 @@ export interface ArchivoGenerado {
   nombre: string;
   blob: Blob;
   folio: string;
-  registroId: string;
+  /** Uno para un comprobante normal, dos cuando es un combinado leche+flete. */
+  registroIds: string[];
 }
 
 export interface ItemAGenerar {
-  registroId: string;
+  registroIds: string[];
   datos: DatosComprobante;
   numeroNomina: number;
 }
@@ -294,7 +295,7 @@ export async function generarComprobantes(
       usados,
     );
 
-    salida.push({ nombre, blob, folio: item.datos.folio, registroId: item.registroId });
+    salida.push({ nombre, blob, folio: item.datos.folio, registroIds: item.registroIds });
     alAvanzar?.(i + 1, items.length, nombre);
 
     // Cede el hilo para que la barra de progreso avance de verdad durante un

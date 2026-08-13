@@ -11,6 +11,8 @@ Thumbs.db
 /GAN0584_3.pdf
 /GAN0594_3.pdf
 fixtures/*.pdf
+/entradas/
+/ejemplos/
 
 # Configuración local de esta máquina (permisos de Claude Code, rutas locales)
 .claude/settings.local.json

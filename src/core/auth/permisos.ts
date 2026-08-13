@@ -32,6 +32,7 @@ const PERMISOS_ADMIN: readonly Permiso[] = [
   'gestionar-usuarios',
   'editar-empresas',
   'restaurar-respaldo',
+  'vincular-proveedor',
 ];
 
 export function permisosDe(rol: Rol): readonly Permiso[] {
@@ -59,4 +60,5 @@ export const ETIQUETAS_PERMISO: Record<Permiso, string> = {
   'gestionar-usuarios': 'Crear y administrar usuarios',
   'editar-empresas': 'Editar datos de las empresas',
   'restaurar-respaldo': 'Restaurar un respaldo completo',
+  'vincular-proveedor': 'Vincular proveedores de leche y transporte',
 };

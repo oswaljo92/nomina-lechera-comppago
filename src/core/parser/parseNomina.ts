@@ -109,6 +109,15 @@ export function parseNomina(paginas: PaginaLayout[]): NominaLeida {
     }
   }
 
+  // Las rutas que reportan litros solo por "Transf." no traen tabla de
+  // litros por día: litrosTotal queda null y esos litros son la única base
+  // que hay para calcular la nota de débito.
+  for (const r of registros) {
+    if (r.litrosTotal === null && r.litrosTransf !== null) {
+      r.litrosTotal = r.litrosTransf;
+    }
+  }
+
   return {
     cabecera,
     registros,
@@ -304,6 +313,7 @@ function crearRegistro(
       cuenta: null,
       litrosTotal: null,
       litrosDia: [],
+      litrosTransf: null,
       conceptos: [],
       brutoPdf: null,
       deduccionPdf: null,
@@ -342,6 +352,18 @@ function acumular(estado: EnCurso, fila: FilaLayout, cabecera: CabeceraNomina): 
       r.brutoPdf = montoEn(fila, 'pago');
       r.deduccionPdf = montoEn(fila, 'deduccion');
       estado.totalesCapturados = true;
+    }
+  }
+
+  // — litros transferidos entre fábricas ("Transf."), solo en transporte —
+  // Comparte banda con el código "Gan" de leche; en transporte esa banda no
+  // se usa para nada más, así que cualquier número ahí es un valor de
+  // transferencia. Se acumula porque un proveedor puede traerlo repartido en
+  // más de una fila, igual que pago/deducción/neto.
+  if (cabecera.tipo !== 'leche') {
+    for (const item of itemsEn(fila, 'gan')) {
+      const n = aEntero(item.texto);
+      if (n !== null) r.litrosTransf = (r.litrosTransf ?? 0) + n;
     }
   }
 

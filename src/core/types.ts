@@ -68,6 +68,13 @@ export interface RegistroLeido {
   cuenta: string | null;
   litrosTotal: number | null;
   litrosDia: LitrosDia[];
+  /**
+   * Litros transferidos entre fábricas/compañías (columna "Transf." de
+   * GAN0594). Solo algunas rutas de transporte la traen, y cuando aparece
+   * suele ser porque esa ruta no tiene tabla de litros por día — ver el
+   * repliegue a `litrosTotal` al final de `parseNomina()`.
+   */
+  litrosTransf: number | null;
   conceptos: ConceptoLeido[];
   /** Totales tal como los declara el PDF; sirven para validar lo calculado. */
   brutoPdf: number | null;
@@ -200,12 +207,27 @@ export interface NotaDebitoNoCalculable {
 
 export type ResultadoNotaDebito = NotaDebitoCalculada | NotaDebitoNoCalculable;
 
+/**
+ * Nota de débito de un comprobante combinado (leche + flete): cada lado
+ * calcula la suya de forma independiente —puede tener su propio
+ * litros/precio/fechas— y se muestra un único monto sumado.
+ */
+export interface NotaDebitoCombinada {
+  aplica: boolean;
+  /** Suma de los `centimos` de los lados con `aplica: true`. */
+  centimos: number;
+  leche: ResultadoNotaDebito | null;
+  transporte: ResultadoNotaDebito | null;
+}
+
 export interface LineaConcepto {
   codigo: string;
   nombre: string;
   clase: ClaseConcepto;
   restaFacturacion: boolean;
   centimos: number;
+  /** Solo se usa en comprobantes combinados, para etiquetar de dónde vino. */
+  origen?: 'leche' | 'flete';
 }
 
 export interface RegistroCalculado {
@@ -284,7 +306,8 @@ export type Permiso =
   | 'borrar'
   | 'gestionar-usuarios'
   | 'editar-empresas'
-  | 'restaurar-respaldo';
+  | 'restaurar-respaldo'
+  | 'vincular-proveedor';
 
 export interface EntradaBitacora {
   id: number;

@@ -244,6 +244,10 @@ export function dibujarComprobante(
   l.texto('FOLIO', der, y - 8, { tam: 7, peso: 'bold', color: COLORES.suave, alineacion: 'der' });
   l.texto(datos.folio, der, y + 2, { tam: 12, peso: 'bold', color: COLORES.verde, alineacion: 'der' });
   y += 14;
+  if (datos.combinado) {
+    l.texto('COMBINADO · LECHE + FLETE', izq, y, { tam: 7.5, peso: 'bold', color: COLORES.tenue });
+    y += 11;
+  }
   l.texto(
     `Nómina Nº ${datos.numero}  ·  Año ${datos.anio}  ·  del ${fechaAMostrar(datos.fechaIni)} al ${fechaAMostrar(datos.fechaFin)}`,
     izq,
@@ -268,12 +272,43 @@ export function dibujarComprobante(
   });
   y += 14;
 
+  // Fecha de factura y de nota de débito, junto al nombre: es lo primero que
+  // el proveedor necesita saber para facturar con la fecha correcta.
+  if (opciones.mostrarNotaDebito) {
+    const lineasFecha: string[] = [];
+    if (datos.notaDebitoCombinada) {
+      const { leche, transporte } = datos.notaDebitoCombinada;
+      if (leche?.aplica) {
+        lineasFecha.push(
+          `Leche · Factura ${fechaAMostrar(leche.fechaFactura)}   ·   Nota de débito ${fechaAMostrar(leche.fechaNota)}`,
+        );
+      }
+      if (transporte?.aplica) {
+        lineasFecha.push(
+          `Flete · Factura ${fechaAMostrar(transporte.fechaFactura)}   ·   Nota de débito ${fechaAMostrar(transporte.fechaNota)}`,
+        );
+      }
+    } else if (datos.notaDebito?.aplica) {
+      lineasFecha.push(
+        `Factura ${fechaAMostrar(datos.notaDebito.fechaFactura)}   ·   Nota de débito ${fechaAMostrar(datos.notaDebito.fechaNota)}`,
+      );
+    }
+    for (const linea of lineasFecha) {
+      l.texto(linea, izq, y, { tam: 9, peso: 'bold', color: COLORES.verde });
+      y += 12;
+    }
+  }
+
   const campos: [string, string][] = [
     [datos.tipo === 'leche' ? 'CÓDIGO GANADERO' : 'CÓDIGO DE RUTA', datos.proveedor.codigo],
     ['RUTA', datos.proveedor.ruta],
     ['CÉDULA', datos.proveedor.cedula ?? '—'],
     ['RIF', datos.proveedor.rif ?? '—'],
   ];
+  if (datos.combinado) {
+    campos.push(['CÓD. TRANSPORTE', datos.combinado.transporte.codigo]);
+    campos.push(['RUTA TRANSPORTE', datos.combinado.transporte.ruta]);
+  }
   if (opciones.mostrarBanco) {
     campos.push(['BANCO', datos.proveedor.banco ?? '—']);
     campos.push(['CUENTA', datos.proveedor.cuenta ?? '—']);
@@ -341,7 +376,20 @@ export function dibujarComprobante(
   l.texto('CONCEPTOS', izq, y, { tam: 6.5, peso: 'bold', color: COLORES.suave });
   y += 14;
 
+  // Divisor sutil entre lo que viene de leche y lo que viene de flete, solo
+  // en comprobantes combinados — para que quede claro de dónde salió cada
+  // línea sin inventar un segundo "CONCEPTOS".
+  let origenPrevio: 'leche' | 'flete' | undefined;
+  function marcaOrigen(origen: 'leche' | 'flete' | undefined): void {
+    if (!origen || origen === origenPrevio) return;
+    origenPrevio = origen;
+    l.rect({ x: izq, y: y - 8, ancho: 3, alto: 10, relleno: origen === 'leche' ? COLORES.verde : COLORES.suave });
+    l.texto(origen === 'leche' ? 'LECHE' : 'FLETE', izq + 8, y, { tam: 6.5, peso: 'bold', color: COLORES.tenue });
+    y += 12;
+  }
+
   for (const linea of datos.pagos) {
+    marcaOrigen(linea.origen);
     l.texto(linea.codigo, xCodigo, y, { tam: 8, color: COLORES.tenue });
     l.texto(l.recortar(linea.nombre, xMonto - xNombre - 110, 9.5), xNombre, y, { tam: 9.5 });
     l.texto(formatearBs(linea.centimos), xMonto, y, { tam: 9.5, alineacion: 'der' });
@@ -355,10 +403,11 @@ export function dibujarComprobante(
   y += 22;
 
   if (datos.deducciones.length > 0) {
+    origenPrevio = undefined;
     for (const linea of datos.deducciones) {
+      marcaOrigen(linea.origen);
       l.texto(linea.codigo, xCodigo, y, { tam: 8, color: COLORES.tenue });
-      const nota = linea.restaFacturacion ? '' : '  ·  retención, no reduce lo facturable';
-      l.texto(l.recortar(linea.nombre + nota, xMonto - xNombre - 110, 9.5), xNombre, y, {
+      l.texto(l.recortar(linea.nombre, xMonto - xNombre - 110, 9.5), xNombre, y, {
         tam: 9.5,
       });
       l.texto(`${MENOS} ${formatearBs(linea.centimos)}`, xMonto, y, { tam: 9.5, alineacion: 'der' });
@@ -379,10 +428,14 @@ export function dibujarComprobante(
   // ── Totales ──
   y += 6;
   const nd = datos.notaDebito;
-  const mostrarNd = opciones.mostrarNotaDebito && nd !== null;
+  const ndComb = datos.notaDebitoCombinada;
+  const mostrarNd = opciones.mostrarNotaDebito && (nd !== null || ndComb !== undefined);
+  // Con dos lados aplicando a la vez hace falta una línea de detalle para
+  // cada uno, en vez de una sola.
+  const dosLineasNd = Boolean(ndComb?.aplica && ndComb.leche?.aplica && ndComb.transporte?.aplica);
   const filasTotales = 2 + (mostrarNd ? 1 : 0);
   const altoFila = 26;
-  const altoDetalleNd = mostrarNd && nd?.aplica ? 16 : mostrarNd ? 16 : 0;
+  const altoDetalleNd = mostrarNd ? (dosLineasNd ? 25 : 16) : 0;
   const altoCaja = filasTotales * altoFila + altoDetalleNd;
 
   l.rect({
@@ -416,35 +469,56 @@ export function dibujarComprobante(
   });
   y += altoFila;
 
-  if (mostrarNd && nd) {
+  if (mostrarNd) {
     l.linea(izq, y, der, COLORES.linea, 0.6);
-    if (nd.aplica) {
+    const aplica = ndComb ? ndComb.aplica : Boolean(nd?.aplica);
+    if (aplica) {
+      const centimosNd = ndComb ? ndComb.centimos : (nd as { centimos: number }).centimos;
       l.texto('NOTA DE DÉBITO', izq + 12, y + 17, { tam: 9.5, peso: 'bold' });
-      l.texto(`${formatearBs(nd.centimos)} Bs`, der - 12, y + 18, {
+      l.texto(`${formatearBs(centimosNd)} Bs`, der - 12, y + 18, {
         tam: 13,
         peso: 'bold',
         alineacion: 'der',
       });
       y += altoFila;
-      const detalle =
-        `${formatearEntero(nd.litrosBase)} L × ${formatearDecimal(nd.precioUsd, 4)} $/L × ` +
-        `(${formatearDecimal(nd.tasaFin)} ${MENOS} ${formatearDecimal(nd.tasaIni)})   ·   ` +
-        `Factura ${fechaAMostrar(nd.fechaFactura)}   ·   Nota de débito ${fechaAMostrar(nd.fechaNota)}   ·   ` +
-        `tasa del ${fechaAMostrar(nd.fechaTasaFin)}`;
-      l.texto(l.recortar(detalle, ANCHO_UTIL - 24, 7.5), izq + 12, y + 4, {
-        tam: 7.5,
-        color: COLORES.tenue,
+
+      const formula = (etiqueta: string, r: { litrosBase: number; precioUsd: number; tasaFin: number; tasaIni: number }) => {
+        const precioBsL = r.precioUsd * r.tasaFin;
+        return (
+          `${etiqueta}${formatearEntero(r.litrosBase)} L × ${formatearDecimal(precioBsL, 4)} Bs/L × ` +
+          `(${formatearDecimal(r.tasaFin)} ${MENOS} ${formatearDecimal(r.tasaIni)})`
+        );
+      };
+
+      const detalles: string[] = [];
+      if (ndComb) {
+        if (ndComb.leche?.aplica) detalles.push(formula('Leche · ', ndComb.leche));
+        if (ndComb.transporte?.aplica) detalles.push(formula('Flete · ', ndComb.transporte));
+      } else if (nd?.aplica) {
+        detalles.push(`${formula('', nd)}   ·   tasa del ${fechaAMostrar(nd.fechaTasaFin)}`);
+      }
+      detalles.forEach((linea, i) => {
+        l.texto(l.recortar(linea, ANCHO_UTIL - 24, 7.5), izq + 12, y + 4 + i * 9, {
+          tam: 7.5,
+          color: COLORES.tenue,
+        });
       });
       y += altoDetalleNd;
     } else {
       l.rect({ x: izq + 1, y, ancho: ANCHO_UTIL - 2, alto: altoFila + altoDetalleNd, relleno: COLORES.errorFondo });
       l.texto('NOTA DE DÉBITO', izq + 12, y + 16, { tam: 9.5, peso: 'bold', color: COLORES.error });
-      for (const [i, linea] of l
-        .partir(`No calculada: ${nd.motivo}`, ANCHO_UTIL - 24, 7.5)
-        .slice(0, 2)
-        .entries()) {
-        l.texto(linea, izq + 12, y + 27 + i * 9, { tam: 7.5, color: COLORES.error });
-      }
+      const motivos: string[] = ndComb
+        ? [
+            ndComb.leche && !ndComb.leche.aplica ? `Leche: ${ndComb.leche.motivo}` : null,
+            ndComb.transporte && !ndComb.transporte.aplica ? `Flete: ${ndComb.transporte.motivo}` : null,
+          ].filter((m): m is string => m !== null)
+        : [`No calculada: ${(nd as { motivo: string }).motivo}`];
+      motivos.slice(0, 2).forEach((m, i) => {
+        l.texto(l.recortar(m, ANCHO_UTIL - 24, 7.5), izq + 12, y + 27 + i * 9, {
+          tam: 7.5,
+          color: COLORES.error,
+        });
+      });
       y += altoFila + altoDetalleNd;
     }
   }
@@ -492,12 +566,6 @@ export function dibujarComprobante(
   // WhatsApp se ve como una imagen medio vacía.
   const yPie = Math.max(y + 14, ALTO_MINIMO_PT - MARGEN - 12);
   l.linea(izq, yPie - 10, der);
-  l.texto(
-    `Documento generado por CompPago a partir del reporte ${datos.tipo === 'leche' ? 'Gan0584' : 'Gan0594'}.`,
-    izq,
-    yPie,
-    { tam: 7, color: COLORES.suave },
-  );
   l.texto(`Folio ${datos.folio}`, der, yPie, { tam: 7, color: COLORES.suave, alineacion: 'der' });
 
   return { primitivas: l.primitivas, alto: Math.round(yPie + MARGEN - 8) };

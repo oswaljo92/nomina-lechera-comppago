@@ -5,6 +5,7 @@ import type {
   Empresa,
   LineaConcepto,
   LitrosDia,
+  NotaDebitoCombinada,
   ParametrosNotaDebito,
   RegistroLeido,
   ResultadoNotaDebito,
@@ -42,6 +43,12 @@ export interface DatosComprobante {
   totalFacturar: number;
   manuales: ConceptoManual[];
   notaDebito: ResultadoNotaDebito | null;
+  /** Solo presentes en un comprobante combinado (leche + flete). */
+  notaDebitoCombinada?: NotaDebitoCombinada;
+  combinado?: {
+    leche: { codigo: string; ruta: string; fabricaCod: string; fabricaNom: string };
+    transporte: { codigo: string; ruta: string; fabricaCod: string; fabricaNom: string };
+  };
 }
 
 export interface ContextoComprobante {

@@ -19,6 +19,7 @@ export function VistaPrevia({
 }) {
   const [url, setUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [ampliado, setAmpliado] = useState(false);
 
   useEffect(() => {
     let vivo = true;
@@ -50,12 +51,23 @@ export function VistaPrevia({
   }
 
   return (
-    <div className="previsualizacion">
+    <div
+      className="previsualizacion"
+      style={ampliado ? { overflow: 'auto', maxHeight: '90vh', alignItems: 'flex-start' } : undefined}
+    >
       {url ? (
         <img
           src={url}
           alt="Vista previa del comprobante"
-          style={{ width: '100%', maxWidth: 560, height: 'auto', boxShadow: '0 4px 24px rgba(0,0,0,.3)' }}
+          title={ampliado ? 'Clic para achicar' : 'Clic para ampliar'}
+          onClick={() => setAmpliado((v) => !v)}
+          style={{
+            width: '100%',
+            maxWidth: ampliado ? '95vw' : 560,
+            height: 'auto',
+            boxShadow: '0 4px 24px rgba(0,0,0,.3)',
+            cursor: ampliado ? 'zoom-out' : 'zoom-in',
+          }}
         />
       ) : (
         <div style={{ color: '#fff', padding: 40 }}>Componiendo el comprobante…</div>

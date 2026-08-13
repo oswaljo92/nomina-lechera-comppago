@@ -3,9 +3,11 @@ import { useApp } from '../estado.tsx';
 import { Aviso, Dato, Modal, Pastilla, Semaforo, Tarjeta, Vacio } from '../components/comunes.tsx';
 import { ModalConceptoManual } from '../components/ModalConceptoManual.tsx';
 import { ModalNotaDebito } from '../components/ModalNotaDebito.tsx';
+import { ModalVinculo } from '../components/ModalVinculo.tsx';
 import { VistaPrevia } from '../components/VistaPrevia.tsx';
 import * as repo from '../../core/db/repo.ts';
-import { construirComprobante, type ContextoComprobante } from '../../core/receipt/comprobante.ts';
+import { construirComprobante, type ContextoComprobante, type DatosComprobante } from '../../core/receipt/comprobante.ts';
+import { construirComprobanteCombinado } from '../../core/receipt/comprobanteCombinado.ts';
 import { OPCIONES_DIBUJO, type OpcionesDibujo } from '../../core/receipt/dibujo.ts';
 import { nombreLote } from '../../core/receipt/nombreArchivo.ts';
 import {
@@ -15,7 +17,7 @@ import {
   type ItemAGenerar,
 } from '../salida/generar.ts';
 import { fechaAMostrar, formatearBs, formatearEntero } from '../../core/parser/numeros.ts';
-import type { NivelValidacion } from '../../core/types.ts';
+import type { NivelValidacion, TipoNomina } from '../../core/types.ts';
 
 interface FechasNomina {
   factura: string;
@@ -41,6 +43,7 @@ export function Comprobantes({ nominaIdInicial }: { nominaIdInicial?: string }) 
     | { tipo: 'nd'; ids: string[] }
     | { tipo: 'previa'; id: string }
     | { tipo: 'opciones' }
+    | { tipo: 'vinculo'; candidato: repo.CandidatoVinculo }
     | null
   >(null);
   const [progreso, setProgreso] = useState<{ hechos: number; total: number; nombre: string } | null>(
@@ -104,6 +107,79 @@ export function Comprobantes({ nominaIdInicial }: { nominaIdInicial?: string }) 
     fechaFin: nomina.fechaFin,
   };
 
+  // ── Vínculos leche+transporte: solo se calculan candidatos/contraparte
+  //    para la nómina "hermana" de la misma semana ganadera, si está cargada.
+  const otroTipo: TipoNomina = nomina.tipo === 'leche' ? 'transporte' : 'leche';
+  const otraNomina = repo.buscarNomina(db, otroTipo, nomina.anio, nomina.numero);
+  const otrosRegistros = otraNomina ? repo.registrosDeNomina(db, otraNomina.id) : [];
+  const nombresFullOtro = otraNomina ? repo.nombresCompletos(db, otroTipo) : new Map<string, string>();
+  const ctxOtro: ContextoComprobante = {
+    catalogo,
+    empresaPorFabrica: (cod) => repo.empresaDeFabrica(db, cod),
+    nombreCompleto: (codigo) => nombresFullOtro.get(codigo),
+    tasas,
+    titulo: otroTipo === 'leche' ? 'PAGO DE LECHE FRESCA' : 'NOMINA DE RUTAS',
+    tipo: otroTipo,
+    anio: nomina.anio,
+    numero: nomina.numero,
+    fechaIni: otraNomina?.fechaIni ?? nomina.fechaIni,
+    fechaFin: otraNomina?.fechaFin ?? nomina.fechaFin,
+  };
+
+  const candidatos = repo.candidatosVinculo(db, nomina.anio, nomina.numero);
+  const candidatoPorCodigo = new Map(
+    candidatos.map((c) => [
+      nomina.tipo === 'leche' ? c.registroLeche.leido.codigo : c.registroTransporte.leido.codigo,
+      c,
+    ]),
+  );
+  const vinculoPorCodigo = new Map(
+    repo
+      .vinculosProveedor(db)
+      .filter((v) => v.estado === 'confirmado')
+      .map((v) => [nomina.tipo === 'leche' ? v.codigoLeche : v.codigoTransporte, v]),
+  );
+
+  function contraparteDe(codigo: string): { codigo: string; cargada: boolean } | null {
+    const vinculo = vinculoPorCodigo.get(codigo);
+    if (!vinculo) return null;
+    const contraparteCodigo = nomina!.tipo === 'leche' ? vinculo.codigoTransporte : vinculo.codigoLeche;
+    return {
+      codigo: contraparteCodigo,
+      cargada: otrosRegistros.some((x) => x.leido.codigo === contraparteCodigo),
+    };
+  }
+
+  /** Resuelve un registro a lo que hay que generar: individual, o combinado
+   * con su contraparte si ya está vinculado y esa nómina está cargada. */
+  function unidadDe(r: (typeof registros)[number]): {
+    registroIds: string[];
+    datos: DatosComprobante;
+    combinado: boolean;
+  } {
+    const contraparteCodigo = contraparteDe(r.leido.codigo)?.codigo;
+    const contraparte = contraparteCodigo
+      ? otrosRegistros.find((x) => x.leido.codigo === contraparteCodigo)
+      : undefined;
+
+    if (!contraparte) {
+      return { registroIds: [r.id], datos: datosDe(r), combinado: false };
+    }
+
+    const combinado =
+      nomina!.tipo === 'leche'
+        ? construirComprobanteCombinado(
+            r.leido, r.manuales, r.notaDebito, ctx,
+            contraparte.leido, contraparte.manuales, contraparte.notaDebito, ctxOtro,
+          )
+        : construirComprobanteCombinado(
+            contraparte.leido, contraparte.manuales, contraparte.notaDebito, ctxOtro,
+            r.leido, r.manuales, r.notaDebito, ctx,
+          );
+
+    return { registroIds: [r.id, contraparte.id], datos: combinado, combinado: true };
+  }
+
   const fabricas = [...new Set(registros.map((r) => r.leido.fabricaCod))].sort();
 
   const visibles = registros.filter((r) => {
@@ -136,7 +212,10 @@ export function Comprobantes({ nominaIdInicial }: { nominaIdInicial?: string }) 
     setMensaje(null);
     const items: ItemAGenerar[] = registros
       .filter((r) => ids.includes(r.id))
-      .map((r) => ({ registroId: r.id, datos: datosDe(r), numeroNomina: nomina!.numero }));
+      .map((r) => {
+        const u = unidadDe(r);
+        return { registroIds: u.registroIds, datos: u.datos, numeroNomina: nomina!.numero };
+      });
 
     setProgreso({ hechos: 0, total: items.length, nombre: '' });
     try {
@@ -159,12 +238,14 @@ export function Comprobantes({ nominaIdInicial }: { nominaIdInicial?: string }) 
       await repo.registrarDescargas(
         db,
         usuario,
-        archivos.map((a) => ({
-          registroId: a.registroId,
-          folio: a.folio,
-          formato,
-          archivo: a.nombre,
-        })),
+        archivos.flatMap((a) =>
+          a.registroIds.map((registroId) => ({
+            registroId,
+            folio: a.folio,
+            formato,
+            archivo: a.nombre,
+          })),
+        ),
       );
       cambiado();
       setMensaje({
@@ -361,6 +442,8 @@ export function Comprobantes({ nominaIdInicial }: { nominaIdInicial?: string }) 
                 const datos = datosDe(r);
                 const nd = datos.notaDebito;
                 const yaDescargado = descargas.get(r.id);
+                const candidato = candidatoPorCodigo.get(r.leido.codigo);
+                const contraparte = contraparteDe(r.leido.codigo);
                 return (
                   <tr key={r.id} className={seleccion.has(r.id) ? 'elegida' : undefined}>
                     <td className="selector">
@@ -378,6 +461,42 @@ export function Comprobantes({ nominaIdInicial }: { nominaIdInicial?: string }) 
                         {r.manuales.length > 0 && ` · ${r.manuales.length} concepto(s) manual(es)`}
                         {yaDescargado && ` · descargado ${yaDescargado.length} vez(ces)`}
                       </div>
+                      {candidato && (
+                        <button
+                          className="btn sutil chico"
+                          style={{ marginTop: 4 }}
+                          onClick={() => setDialogo({ tipo: 'vinculo', candidato })}
+                        >
+                          🔗 posible vínculo con {otroTipo === 'leche' ? 'leche' : 'flete'}
+                        </button>
+                      )}
+                      {contraparte?.cargada && (
+                        <div style={{ marginTop: 4 }}>
+                          <Pastilla tono="ok">🔗 combinado con {contraparte.codigo}</Pastilla>{' '}
+                          {puedo('vincular-proveedor') && (
+                            <button
+                              className="btn sutil chico"
+                              onClick={() => {
+                                if (!usuario) return;
+                                const codigoLeche = nomina.tipo === 'leche' ? r.leido.codigo : contraparte.codigo;
+                                const codigoTransporte =
+                                  nomina.tipo === 'leche' ? contraparte.codigo : r.leido.codigo;
+                                void repo
+                                  .desvincularProveedor(db, usuario, codigoLeche, codigoTransporte)
+                                  .then(() => cambiado());
+                              }}
+                            >
+                              ✕ desvincular
+                            </button>
+                          )}
+                        </div>
+                      )}
+                      {contraparte && !contraparte.cargada && (
+                        <div className="tenue pequeno" style={{ marginTop: 4 }}>
+                          🔗 vinculado — falta cargar la nómina de{' '}
+                          {otroTipo === 'leche' ? 'leche' : 'flete'} de esta semana
+                        </div>
+                      )}
                     </td>
                     <td className="pequeno" data-etiqueta="Fábrica">
                       {r.leido.fabricaCod} {r.leido.fabricaNom}
@@ -401,6 +520,11 @@ export function Comprobantes({ nominaIdInicial }: { nominaIdInicial?: string }) 
                     </td>
                     <td data-etiqueta="Estado">
                       <Semaforo nivel={(r.validacion as NivelValidacion) ?? 'ok'} />
+                      <div style={{ marginTop: 4 }}>
+                        <Pastilla tono={r.notaDebito ? 'ok' : 'neutra'}>
+                          {r.notaDebito ? 'Con ND' : 'Sin ND'}
+                        </Pastilla>
+                      </div>
                     </td>
                     <td className="acciones-celda">
                       <button
@@ -572,8 +696,41 @@ export function Comprobantes({ nominaIdInicial }: { nominaIdInicial?: string }) 
             </>
           }
         >
-          <VistaPrevia datos={datosDe(registroPrevia)} opciones={opciones} />
+          <VistaPrevia datos={unidadDe(registroPrevia).datos} opciones={opciones} />
         </Modal>
+      )}
+
+      {dialogo?.tipo === 'vinculo' && usuario && (
+        <ModalVinculo
+          candidato={dialogo.candidato}
+          puedeVincular={puedo('vincular-proveedor')}
+          alCerrar={() => setDialogo(null)}
+          alConfirmar={() => {
+            void repo
+              .confirmarVinculo(
+                db,
+                usuario,
+                dialogo.candidato.registroLeche.leido.codigo,
+                dialogo.candidato.registroTransporte.leido.codigo,
+                dialogo.candidato.documento,
+              )
+              .then(() => cambiado())
+              .catch((e: unknown) => {
+                setMensaje({ nivel: 'error', texto: e instanceof Error ? e.message : String(e) });
+              });
+          }}
+          alRechazar={() => {
+            void repo
+              .rechazarVinculo(
+                db,
+                usuario,
+                dialogo.candidato.registroLeche.leido.codigo,
+                dialogo.candidato.registroTransporte.leido.codigo,
+                dialogo.candidato.documento,
+              )
+              .then(() => cambiado());
+          }}
+        />
       )}
 
       {dialogo?.tipo === 'opciones' && (

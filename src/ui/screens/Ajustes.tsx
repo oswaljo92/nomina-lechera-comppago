@@ -842,6 +842,7 @@ function SeccionDatos() {
   const { db, usuario, plataforma, cambiado, reemplazarBase, version, puedo } = useApp();
   void version;
   const nominas = repo.listarNominas(db);
+  const vinculos = repo.vinculosProveedor(db);
   const [elegidas, setElegidas] = useState<Set<string>>(new Set(nominas.map((n) => n.id)));
   const [informe, setInforme] = useState<{ paquete: Paquete; informe: Informe } | null>(null);
   const [mensaje, setMensaje] = useState<{ nivel: 'ok' | 'error'; texto: string } | null>(null);
@@ -1020,6 +1021,63 @@ function SeccionDatos() {
           </div>
           {respaldadoParaBorrar && (
             <Aviso nivel="ok">Respaldo descargado. Ya puedes empezar de cero si quieres.</Aviso>
+          )}
+        </Tarjeta>
+      )}
+
+      {puedo('vincular-proveedor') && (
+        <Tarjeta
+          titulo="Vínculos leche-transporte"
+          descripcion="Proveedores confirmados como la misma persona en los dos reportes. Se combinan en un solo comprobante automáticamente cada semana, sin volver a preguntar."
+        >
+          {vinculos.length === 0 ? (
+            <Vacio icono="🔗" titulo="No hay vínculos todavía">
+              Se sugieren solos en Comprobantes cuando el mismo RIF/cédula aparece en leche y en
+              transporte de la misma semana ganadera.
+            </Vacio>
+          ) : (
+            <div className="tabla-envoltura tabla-adaptable">
+              <table className="tabla">
+                <thead>
+                  <tr>
+                    <th>Código leche</th>
+                    <th>Código transporte</th>
+                    <th>Estado</th>
+                    <th>Actualizado</th>
+                    <th style={{ textAlign: 'right' }} />
+                  </tr>
+                </thead>
+                <tbody>
+                  {vinculos.map((v) => (
+                    <tr key={v.id}>
+                      <td className="principal">{v.codigoLeche}</td>
+                      <td className="principal">{v.codigoTransporte}</td>
+                      <td data-etiqueta="Estado">
+                        <Pastilla tono={v.estado === 'confirmado' ? 'ok' : 'neutra'}>
+                          {v.estado === 'confirmado' ? 'Vinculado' : 'Descartado'}
+                        </Pastilla>
+                      </td>
+                      <td className="pequeno" data-etiqueta="Actualizado">
+                        {fechaAMostrar(v.actualizadoEn.slice(0, 10))}
+                      </td>
+                      <td className="acciones-celda">
+                        <button
+                          className="btn sutil chico"
+                          onClick={() => {
+                            if (!usuario) return;
+                            void repo
+                              .desvincularProveedor(db, usuario, v.codigoLeche, v.codigoTransporte)
+                              .then(() => cambiado());
+                          }}
+                        >
+                          {v.estado === 'confirmado' ? 'Desvincular' : 'Reconsiderar'}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </Tarjeta>
       )}

@@ -2,6 +2,7 @@ import type { BaseDatos, Fila } from './basedatos.ts';
 import { registrarBitacora } from './bitacora.ts';
 import { nuevoId } from '../auth/hash.ts';
 import { calcularRegistro } from '../calc/calcular.ts';
+import { digitosDocumento } from '../identidad.ts';
 import type {
   AsignacionFabrica,
   Autor,
@@ -439,6 +440,9 @@ function aRegistro(db: BaseDatos, f: Fila): RegistroGuardado {
       banco: typeof f['banco'] === 'string' ? f['banco'] : null,
       cuenta: typeof f['cuenta'] === 'string' ? f['cuenta'] : null,
       litrosTotal: f['litros_total'] === null ? null : Number(f['litros_total']),
+      // Solo tiene sentido durante el parseo: para cuando se guarda, ya se
+      // replegó a litrosTotal y no hay columna propia en la base.
+      litrosTransf: null,
       litrosDia: litrosDe(db, id),
       conceptos: conceptosDe(db, id),
       brutoPdf: Number(f['bruto']),
@@ -742,4 +746,173 @@ export function descargasDeNomina(db: BaseDatos, nominaId: string): Map<string, 
     salida.set(rid, lista);
   }
   return salida;
+}
+
+// ─────────────────────────────────────────────────────────────
+// Vínculos leche-transporte (comprobante combinado)
+// ─────────────────────────────────────────────────────────────
+
+export interface CandidatoVinculo {
+  registroLeche: RegistroGuardado;
+  registroTransporte: RegistroGuardado;
+  documento: string;
+}
+
+/**
+ * Candidatos de vínculo para una semana ganadera: mismo documento
+ * (RIF/cédula normalizado) en leche y en transporte, excluyendo pares que ya
+ * se resolvieron antes (confirmados O rechazados).
+ */
+export function candidatosVinculo(db: BaseDatos, anio: number, numero: number): CandidatoVinculo[] {
+  const nominaLeche = buscarNomina(db, 'leche', anio, numero);
+  const nominaTransporte = buscarNomina(db, 'transporte', anio, numero);
+  if (!nominaLeche || !nominaTransporte) return [];
+
+  const registrosLeche = registrosDeNomina(db, nominaLeche.id);
+  const registrosTransporte = registrosDeNomina(db, nominaTransporte.id);
+
+  const resueltos = new Set(
+    db
+      .todos<Fila>('SELECT codigo_leche, codigo_transporte FROM vinculos_proveedor')
+      .map((f) => `${String(f['codigo_leche'])}::${String(f['codigo_transporte'])}`),
+  );
+
+  const candidatos: CandidatoVinculo[] = [];
+  for (const rl of registrosLeche) {
+    const digL = digitosDocumento(rl.leido.rif) ?? digitosDocumento(rl.leido.cedula);
+    if (!digL) continue;
+    for (const rt of registrosTransporte) {
+      const digT = digitosDocumento(rt.leido.rif) ?? digitosDocumento(rt.leido.cedula);
+      if (digT !== digL) continue;
+      if (resueltos.has(`${rl.leido.codigo}::${rt.leido.codigo}`)) continue;
+      candidatos.push({ registroLeche: rl, registroTransporte: rt, documento: digL });
+    }
+  }
+  return candidatos;
+}
+
+export interface VinculoProveedor {
+  id: string;
+  codigoLeche: string;
+  codigoTransporte: string;
+  estado: 'confirmado' | 'rechazado';
+  documento: string | null;
+  usuarioId: string;
+  creadoEn: string;
+  actualizadoEn: string;
+}
+
+function aVinculo(f: Fila): VinculoProveedor {
+  return {
+    id: String(f['id']),
+    codigoLeche: String(f['codigo_leche']),
+    codigoTransporte: String(f['codigo_transporte']),
+    estado: String(f['estado']) === 'rechazado' ? 'rechazado' : 'confirmado',
+    documento: typeof f['documento'] === 'string' ? f['documento'] : null,
+    usuarioId: String(f['usuario_id']),
+    creadoEn: String(f['creado_en']),
+    actualizadoEn: String(f['actualizado_en']),
+  };
+}
+
+export function vinculosProveedor(db: BaseDatos): VinculoProveedor[] {
+  return db
+    .todos<Fila>('SELECT * FROM vinculos_proveedor ORDER BY actualizado_en DESC')
+    .map(aVinculo);
+}
+
+export function vinculoConfirmadoDe(
+  db: BaseDatos,
+  tipo: TipoNomina,
+  codigo: string,
+): VinculoProveedor | null {
+  const columna = tipo === 'leche' ? 'codigo_leche' : 'codigo_transporte';
+  const f = db.uno<Fila>(
+    `SELECT * FROM vinculos_proveedor WHERE ${columna} = ? AND estado = 'confirmado'`,
+    [codigo],
+  );
+  return f ? aVinculo(f) : null;
+}
+
+async function guardarVinculo(
+  db: BaseDatos,
+  autor: Autor,
+  codigoLeche: string,
+  codigoTransporte: string,
+  documento: string | null,
+  estado: 'confirmado' | 'rechazado',
+): Promise<void> {
+  const ahora = new Date().toISOString();
+  db.correr(
+    `INSERT INTO vinculos_proveedor
+       (id, codigo_leche, codigo_transporte, estado, documento, usuario_id, creado_en, actualizado_en)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(codigo_leche, codigo_transporte) DO UPDATE SET
+       estado = excluded.estado,
+       documento = excluded.documento,
+       usuario_id = excluded.usuario_id,
+       actualizado_en = excluded.actualizado_en`,
+    [nuevoId('v_'), codigoLeche, codigoTransporte, estado, documento, autor.id, ahora, ahora],
+  );
+  await registrarBitacora(
+    db,
+    autor,
+    estado === 'confirmado' ? 'confirmar-vinculo' : 'rechazar-vinculo',
+    'vinculo',
+    `${codigoLeche}::${codigoTransporte}`,
+    { codigoLeche, codigoTransporte, documento },
+  );
+}
+
+/** Vincula un proveedor de leche con una ruta de transporte. Se recuerda de
+ * una semana a otra: no hace falta reconfirmarlo en cada carga. */
+export async function confirmarVinculo(
+  db: BaseDatos,
+  autor: Autor,
+  codigoLeche: string,
+  codigoTransporte: string,
+  documento: string | null,
+): Promise<void> {
+  const yaLeche = vinculoConfirmadoDe(db, 'leche', codigoLeche);
+  if (yaLeche && yaLeche.codigoTransporte !== codigoTransporte) {
+    throw new Error(
+      `Este proveedor de leche ya está vinculado a la ruta ${yaLeche.codigoTransporte}. Desvincúlalo primero.`,
+    );
+  }
+  const yaTransporte = vinculoConfirmadoDe(db, 'transporte', codigoTransporte);
+  if (yaTransporte && yaTransporte.codigoLeche !== codigoLeche) {
+    throw new Error(
+      `Esta ruta ya está vinculada al proveedor de leche ${yaTransporte.codigoLeche}. Desvincúlala primero.`,
+    );
+  }
+  await guardarVinculo(db, autor, codigoLeche, codigoTransporte, documento, 'confirmado');
+}
+
+/** Descarta una sugerencia para que no se vuelva a proponer cada semana. */
+export async function rechazarVinculo(
+  db: BaseDatos,
+  autor: Autor,
+  codigoLeche: string,
+  codigoTransporte: string,
+  documento: string | null,
+): Promise<void> {
+  await guardarVinculo(db, autor, codigoLeche, codigoTransporte, documento, 'rechazado');
+}
+
+/** Deshace un vínculo (confirmado o rechazado) para que vuelva a poder
+ * sugerirse o decidirse desde cero. */
+export async function desvincularProveedor(
+  db: BaseDatos,
+  autor: Autor,
+  codigoLeche: string,
+  codigoTransporte: string,
+): Promise<void> {
+  db.correr('DELETE FROM vinculos_proveedor WHERE codigo_leche = ? AND codigo_transporte = ?', [
+    codigoLeche,
+    codigoTransporte,
+  ]);
+  await registrarBitacora(db, autor, 'desvincular-proveedor', 'vinculo', `${codigoLeche}::${codigoTransporte}`, {
+    codigoLeche,
+    codigoTransporte,
+  });
 }
