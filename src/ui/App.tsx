@@ -23,6 +23,40 @@ interface Enlace {
   cuenta?: number;
 }
 
+interface UsuarioSesion {
+  nombre: string;
+  rol: string;
+}
+
+/**
+ * Bloque de perfil (avatar, nombre, rol, entorno) que abre "Mi cuenta". Se
+ * reutiliza tanto en el pie del riel lateral como al fondo del cajón que
+ * abre el botón hamburguesa, para que el perfil sea alcanzable en ambos.
+ */
+function PerfilPie({
+  usuario,
+  entorno,
+  onAbrir,
+}: {
+  usuario: UsuarioSesion;
+  entorno: string;
+  onAbrir: () => void;
+}) {
+  const inicial = usuario.nombre.trim().charAt(0).toUpperCase();
+  return (
+    <div className="pie-lateral">
+      <button className="chip-usuario ancho" onClick={onAbrir}>
+        <span className={`avatar chico${usuario.rol === 'admin' ? ' admin' : ''}`}>{inicial}</span>
+        <span>
+          <span className="perfil">{usuario.nombre}</span>
+          <span className="rol">{usuario.rol === 'admin' ? 'Administrador' : 'Usuario normal'}</span>
+        </span>
+      </button>
+      <div className="entorno">{entorno}</div>
+    </div>
+  );
+}
+
 /**
  * Lista de navegación. Se usa tanto en el riel permanente (donde en tableta
  * el CSS la reduce a solo íconos) como dentro del cajón que abre el botón
@@ -162,20 +196,11 @@ export function App() {
 
         <NavPrincipal enlaces={enlaces} pantalla={pantalla} ir={ir} />
 
-        <div className="pie-lateral">
-          <button className="chip-usuario ancho" onClick={() => setMiCuenta(true)}>
-            <span className={`avatar chico${usuario.rol === 'admin' ? ' admin' : ''}`}>
-              {inicial}
-            </span>
-            <span>
-              <span className="perfil">{usuario.nombre}</span>
-              <span className="rol">
-                {usuario.rol === 'admin' ? 'Administrador' : 'Usuario normal'}
-              </span>
-            </span>
-          </button>
-          <div className="entorno">{plataforma.etiqueta}</div>
-        </div>
+        <PerfilPie
+          usuario={usuario}
+          entorno={plataforma.etiqueta}
+          onAbrir={() => setMiCuenta(true)}
+        />
       </aside>
 
       {/* Siempre montado: la visibilidad la decide el CSS del tramo tableta,
@@ -200,6 +225,14 @@ export function App() {
             pantalla={pantalla}
             ir={ir}
             alSeleccionar={() => setMenuAbierto(false)}
+          />
+          <PerfilPie
+            usuario={usuario}
+            entorno={plataforma.etiqueta}
+            onAbrir={() => {
+              setMiCuenta(true);
+              setMenuAbierto(false);
+            }}
           />
         </div>
       </div>

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useApp } from '../estado.tsx';
-import { Aviso, Dato, Modal, Pastilla, Tarjeta, Vacio } from '../components/comunes.tsx';
+import { Aviso, Confirmar, Dato, Modal, Pastilla, Tarjeta, Vacio } from '../components/comunes.tsx';
 import * as repo from '../../core/db/repo.ts';
 import type { NominaResumen } from '../../core/db/repo.ts';
 import { diasEntre, fechaAMostrar, formatearDecimal, nombreDia } from '../../core/parser/numeros.ts';
@@ -8,7 +8,7 @@ import {
   construirLibroTasas,
   leerLibroTasas,
   type FilaTasaExcel,
-  type FilaTasaImportada,
+  type LecturaLibroTasas,
 } from '../../core/db/tasasExcel.ts';
 
 function semanaDe(fecha: string, semanas: NominaResumen[]): NominaResumen | undefined {
@@ -31,7 +31,7 @@ function construirFilas(
     return {
       fecha: t.fecha,
       dia: nombreDia(t.fecha),
-      semanaGanadera: semana ? `Nº ${semana.numero} · ${semana.anio}` : '',
+      semanaGanadera: semana ? String(semana.numero) : '',
       tasa: t.tasa,
       difCambio,
       esJueves: esJueves(t.fecha),
@@ -64,10 +64,12 @@ export function Tasas() {
   const [semanaElegida, setSemanaElegida] = useState<string | null>(null);
   const [seleccion, setSeleccion] = useState<Set<string>>(new Set());
   const [valorMasivo, setValorMasivo] = useState('');
-  const [importacion, setImportacion] = useState<{
-    filas: FilaTasaImportada[];
-    errores: string[];
-  } | null>(null);
+  const [importacion, setImportacion] = useState<LecturaLibroTasas | null>(null);
+  const [busqueda, setBusqueda] = useState('');
+  const [anioFiltro, setAnioFiltro] = useState('');
+  const [pagina, setPagina] = useState(0);
+  const [porPagina, setPorPagina] = useState(20);
+  const [confirmarEliminar, setConfirmarEliminar] = useState<string[] | null>(null);
 
   const claveSemana =
     semanaElegida && semanas.some((s) => `${s.anio}-${s.numero}` === semanaElegida)
@@ -145,7 +147,25 @@ export function Tasas() {
     setImportacion(null);
   }
 
-  const todosSeleccionados = filas.length > 0 && filas.every((f) => seleccion.has(f.fecha));
+  const anios = [...new Set(tasas.map((t) => t.fecha.slice(0, 4)))].sort((a, b) => b.localeCompare(a));
+
+  const filasFiltradas = filas.filter((f) => {
+    if (anioFiltro && f.fecha.slice(0, 4) !== anioFiltro) return false;
+    if (busqueda.trim()) {
+      const t = busqueda.trim().toLowerCase();
+      const heno = `${fechaAMostrar(f.fecha)} ${f.dia} ${f.semanaGanadera} ${formatearDecimal(f.tasa, 4)}`;
+      if (!heno.toLowerCase().includes(t)) return false;
+    }
+    return true;
+  });
+
+  const totalPaginas = Math.max(1, Math.ceil(filasFiltradas.length / porPagina));
+  const paginaSegura = Math.min(pagina, totalPaginas - 1);
+  const inicio = paginaSegura * porPagina;
+  const filasPagina = filasFiltradas.slice(inicio, inicio + porPagina);
+
+  const todosFiltradosSeleccionados =
+    filasFiltradas.length > 0 && filasFiltradas.every((f) => seleccion.has(f.fecha));
 
   return (
     <>
@@ -306,6 +326,39 @@ export function Tasas() {
           </Vacio>
         ) : (
           <>
+            <div className="filtros">
+              <div className="buscador">
+                <span className="lupa">🔍</span>
+                <input
+                  type="text"
+                  placeholder="Buscar por fecha, día, semana o tasa"
+                  value={busqueda}
+                  onChange={(e) => {
+                    setBusqueda(e.target.value);
+                    setPagina(0);
+                  }}
+                />
+              </div>
+              <select
+                value={anioFiltro}
+                onChange={(e) => {
+                  setAnioFiltro(e.target.value);
+                  setPagina(0);
+                }}
+              >
+                <option value="">Todos los años</option>
+                {anios.map((a) => (
+                  <option key={a} value={a}>
+                    {a}
+                  </option>
+                ))}
+              </select>
+              <span className="crece" />
+              <span className="tenue pequeno">
+                {filasFiltradas.length} de {tasas.length} tasas
+              </span>
+            </div>
+
             {seleccion.size > 0 && (
               <div className="barra-lote">
                 <span className="conteo">{seleccion.size} seleccionada(s)</span>
@@ -324,95 +377,155 @@ export function Tasas() {
                 >
                   Aplicar a {seleccion.size} seleccionada(s)
                 </button>
+                <button
+                  className="btn chico peligro"
+                  disabled={!editable || !usuario}
+                  onClick={() => setConfirmarEliminar([...seleccion])}
+                >
+                  Quitar {seleccion.size} seleccionada(s)
+                </button>
                 <button className="btn chico" onClick={() => setSeleccion(new Set())}>
                   Cancelar
                 </button>
               </div>
             )}
-            <div className="tabla-envoltura tabla-adaptable" style={{ maxHeight: 420, overflowY: 'auto' }}>
-              <table className="tabla">
-                <thead>
-                  <tr>
-                    <th style={{ width: 34 }}>
-                      <input
-                        type="checkbox"
-                        checked={todosSeleccionados}
-                        onChange={() => {
-                          setSeleccion(
-                            todosSeleccionados ? new Set() : new Set(filas.map((f) => f.fecha)),
-                          );
-                        }}
-                      />
-                    </th>
-                    <th>Fecha</th>
-                    <th>Día</th>
-                    <th>Semana ganadera</th>
-                    <th className="num">Tasa BCV</th>
-                    <th className="num">Dif. cambio</th>
-                    <th style={{ textAlign: 'right' }} />
-                  </tr>
-                </thead>
-                <tbody>
-                  {filas.map((f) => (
-                    <tr key={f.fecha} style={f.esJueves ? { background: 'var(--verde-50)' } : undefined}>
-                      <td>
-                        <input
-                          type="checkbox"
-                          checked={seleccion.has(f.fecha)}
-                          onChange={() => {
-                            const copia = new Set(seleccion);
-                            if (copia.has(f.fecha)) copia.delete(f.fecha);
-                            else copia.add(f.fecha);
-                            setSeleccion(copia);
-                          }}
-                        />
-                      </td>
-                      <td className="principal">{fechaAMostrar(f.fecha)}</td>
-                      <td>{f.dia}</td>
-                      <td>{f.semanaGanadera || '—'}</td>
-                      <td className="num" data-etiqueta="Tasa BCV">
-                        <input
-                          key={`${f.fecha}:${f.tasa}`}
-                          type="text"
-                          className="numero"
-                          defaultValue={formatearDecimal(f.tasa, 4)}
-                          disabled={!editable}
-                          style={{ padding: '2px 5px', fontSize: 12, width: 90 }}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') guardar(f.fecha, e.currentTarget.value);
-                          }}
-                          onBlur={(e) => {
-                            if (e.currentTarget.value.trim()) guardar(f.fecha, e.currentTarget.value);
-                          }}
-                        />
-                      </td>
-                      <td
-                        className="num"
-                        data-etiqueta="Dif. cambio"
-                        style={f.esJueves ? { fontWeight: 700 } : undefined}
-                      >
-                        {f.difCambio === null ? '—' : formatearDecimal(f.difCambio, 4)}
-                      </td>
-                      <td className="acciones-celda">
-                        <button
-                          className="btn sutil chico"
-                          disabled={!editable || !usuario}
-                          onClick={() => {
-                            if (!usuario) return;
-                            void repo.eliminarTasa(db, usuario, f.fecha).then(() => cambiado());
-                          }}
-                        >
-                          Quitar
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+
+            {filasFiltradas.length === 0 ? (
+              <Vacio icono="🔍" titulo="Ninguna tasa coincide con el filtro">
+                Ajusta la búsqueda o el año.
+              </Vacio>
+            ) : (
+              <>
+                <div className="tabla-envoltura tabla-adaptable">
+                  <table className="tabla">
+                    <thead>
+                      <tr>
+                        <th style={{ width: 34 }}>
+                          <input
+                            type="checkbox"
+                            checked={todosFiltradosSeleccionados}
+                            onChange={() => {
+                              const copia = new Set(seleccion);
+                              if (todosFiltradosSeleccionados) {
+                                filasFiltradas.forEach((f) => copia.delete(f.fecha));
+                              } else {
+                                filasFiltradas.forEach((f) => copia.add(f.fecha));
+                              }
+                              setSeleccion(copia);
+                            }}
+                          />
+                        </th>
+                        <th>Fecha</th>
+                        <th>Día</th>
+                        <th>Semana ganadera</th>
+                        <th className="num">Tasa BCV</th>
+                        <th className="num">Dif. cambio</th>
+                        <th style={{ textAlign: 'right' }} />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filasPagina.map((f) => (
+                        <tr key={f.fecha} style={f.esJueves ? { background: 'var(--verde-50)' } : undefined}>
+                          <td>
+                            <input
+                              type="checkbox"
+                              checked={seleccion.has(f.fecha)}
+                              onChange={() => {
+                                const copia = new Set(seleccion);
+                                if (copia.has(f.fecha)) copia.delete(f.fecha);
+                                else copia.add(f.fecha);
+                                setSeleccion(copia);
+                              }}
+                            />
+                          </td>
+                          <td className="principal">{fechaAMostrar(f.fecha)}</td>
+                          <td>{f.dia}</td>
+                          <td>{f.semanaGanadera || '—'}</td>
+                          <td className="num" data-etiqueta="Tasa BCV">
+                            <input
+                              key={`${f.fecha}:${f.tasa}`}
+                              type="text"
+                              className="numero"
+                              defaultValue={formatearDecimal(f.tasa, 4)}
+                              disabled={!editable}
+                              style={{ padding: '2px 5px', fontSize: 12, width: 90 }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') guardar(f.fecha, e.currentTarget.value);
+                              }}
+                              onBlur={(e) => {
+                                if (e.currentTarget.value.trim()) guardar(f.fecha, e.currentTarget.value);
+                              }}
+                            />
+                          </td>
+                          <td
+                            className="num"
+                            data-etiqueta="Dif. cambio"
+                            style={f.esJueves ? { fontWeight: 700 } : undefined}
+                          >
+                            {f.difCambio === null ? '—' : formatearDecimal(f.difCambio, 4)}
+                          </td>
+                          <td className="acciones-celda">
+                            <button
+                              className="btn sutil chico peligro"
+                              disabled={!editable || !usuario}
+                              onClick={() => setConfirmarEliminar([f.fecha])}
+                            >
+                              Quitar
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <Paginacion
+                  pagina={paginaSegura}
+                  totalPaginas={totalPaginas}
+                  porPagina={porPagina}
+                  total={filasFiltradas.length}
+                  alCambiarPagina={setPagina}
+                  alCambiarPorPagina={(n) => {
+                    setPorPagina(n);
+                    setPagina(0);
+                  }}
+                />
+              </>
+            )}
           </>
         )}
       </Tarjeta>
+
+      {confirmarEliminar && usuario && (
+        <Confirmar
+          titulo={
+            confirmarEliminar.length === 1 ? 'Eliminar la tasa' : `Eliminar ${confirmarEliminar.length} tasas`
+          }
+          peligro
+          textoConfirmar="Eliminar definitivamente"
+          mensaje={
+            confirmarEliminar.length === 1 ? (
+              <p>Se eliminará la tasa del {fechaAMostrar(confirmarEliminar[0]!)}. No se puede deshacer.</p>
+            ) : (
+              <p>Se eliminarán {confirmarEliminar.length} tasas seleccionadas. No se puede deshacer.</p>
+            )
+          }
+          alCerrar={() => setConfirmarEliminar(null)}
+          alConfirmar={() => {
+            const fechas = confirmarEliminar;
+            void (async () => {
+              // Secuencial, misma razón que guardarMasivo: la bitácora
+              // encadenada no tolera eliminaciones concurrentes.
+              for (const f of fechas) await repo.eliminarTasa(db, usuario, f);
+              cambiado();
+              setSeleccion((prev) => {
+                const copia = new Set(prev);
+                fechas.forEach((f) => copia.delete(f));
+                return copia;
+              });
+            })();
+          }}
+        />
+      )}
 
       {importacion && (
         <ModalImportarTasas
@@ -432,7 +545,7 @@ function ModalImportarTasas({
   alCerrar,
   alImportar,
 }: {
-  importacion: { filas: FilaTasaImportada[]; errores: string[] };
+  importacion: LecturaLibroTasas;
   existentes: Map<string, number>;
   alCerrar: () => void;
   alImportar: () => void;
@@ -463,6 +576,13 @@ function ModalImportarTasas({
       {importacion.errores.length > 0 && (
         <Aviso nivel="aviso" titulo="Algunas filas no se pudieron leer">
           {importacion.errores.join(' · ')}
+        </Aviso>
+      )}
+
+      {importacion.difCambioVacio && (
+        <Aviso nivel="info" titulo="Sobre la columna Dif. Cambio">
+          La columna "Dif. Cambio" del archivo vino vacía. No importa: esa columna la calcula la
+          aplicación sola, a partir de las tasas y las nóminas ya cargadas.
         </Aviso>
       )}
 
@@ -503,5 +623,82 @@ function ModalImportarTasas({
         </>
       )}
     </Modal>
+  );
+}
+
+/** Siempre incluye la primera y última página, más actual±1; junta huecos con "…". */
+function paginasAMostrar(actual: number, total: number): (number | '…')[] {
+  const paginas = new Set<number>([0, total - 1]);
+  for (let p = actual - 1; p <= actual + 1; p++) {
+    if (p >= 0 && p < total) paginas.add(p);
+  }
+  const ordenadas = [...paginas].sort((a, b) => a - b);
+  const resultado: (number | '…')[] = [];
+  let anterior: number | null = null;
+  for (const p of ordenadas) {
+    if (anterior !== null && p - anterior > 1) resultado.push('…');
+    resultado.push(p);
+    anterior = p;
+  }
+  return resultado;
+}
+
+function Paginacion({
+  pagina,
+  totalPaginas,
+  porPagina,
+  total,
+  alCambiarPagina,
+  alCambiarPorPagina,
+}: {
+  pagina: number;
+  totalPaginas: number;
+  porPagina: number;
+  total: number;
+  alCambiarPagina: (p: number) => void;
+  alCambiarPorPagina: (n: number) => void;
+}) {
+  const inicio = pagina * porPagina + 1;
+  const fin = Math.min((pagina + 1) * porPagina, total);
+  return (
+    <div className="paginacion">
+      <span className="tenue pequeno">
+        {inicio}–{fin} de {total}
+      </span>
+      <span className="crece" />
+      <div className="paginacion-numeros">
+        <button className="btn sutil chico" disabled={pagina === 0} onClick={() => alCambiarPagina(pagina - 1)}>
+          ‹
+        </button>
+        {paginasAMostrar(pagina, totalPaginas).map((p, i) =>
+          p === '…' ? (
+            <span key={`e${i}`} className="paginacion-elipsis">
+              …
+            </span>
+          ) : (
+            <button
+              key={p}
+              className={`btn chico ${p === pagina ? 'primario' : 'sutil'}`}
+              onClick={() => alCambiarPagina(p)}
+            >
+              {p + 1}
+            </button>
+          ),
+        )}
+        <button
+          className="btn sutil chico"
+          disabled={pagina >= totalPaginas - 1}
+          onClick={() => alCambiarPagina(pagina + 1)}
+        >
+          ›
+        </button>
+      </div>
+      <select value={porPagina} onChange={(e) => alCambiarPorPagina(Number(e.target.value))}>
+        <option value={10}>10 por página</option>
+        <option value={20}>20 por página</option>
+        <option value={50}>50 por página</option>
+        <option value={100}>100 por página</option>
+      </select>
+    </div>
   );
 }

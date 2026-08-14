@@ -82,7 +82,7 @@ export function MiCuenta({ alCerrar, alSalir }: { alCerrar: () => void; alSalir:
         />
       </Campo>
       <div className="linea">
-        <Campo etiqueta="Contraseña nueva" ayuda="Mínimo 8 caracteres, con letras y números.">
+        <Campo etiqueta="Contraseña nueva">
           <input
             type="password"
             value={nueva}
@@ -98,6 +98,9 @@ export function MiCuenta({ alCerrar, alSalir }: { alCerrar: () => void; alSalir:
             onChange={(e) => setNueva2(e.target.value)}
           />
         </Campo>
+      </div>
+      <div className="ayuda" style={{ marginTop: -6, marginBottom: 10 }}>
+        Mínimo 8 caracteres, con letras y números.
       </div>
       {problema && <Aviso nivel="aviso">{problema}</Aviso>}
       <button

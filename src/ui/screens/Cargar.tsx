@@ -17,6 +17,7 @@ export function Cargar({ alGuardar }: { alGuardar: (nominaId: string) => void })
   const { db, usuario, cambiado, puedo } = useApp();
   const [estados, setEstados] = useState<Estado[]>([]);
   const [encima, setEncima] = useState(false);
+  const [guardandoTodas, setGuardandoTodas] = useState(false);
   const entrada = useRef<HTMLInputElement>(null);
 
   const procesar = useCallback(
@@ -78,9 +79,9 @@ export function Cargar({ alGuardar }: { alGuardar: (nominaId: string) => void })
     [db, cambiado],
   );
 
-  async function guardar(indice: number) {
+  async function guardarUno(indice: number): Promise<string | null> {
     const estado = estados[indice];
-    if (!estado || estado.fase !== 'listo' || !usuario) return;
+    if (!estado || estado.fase !== 'listo' || !usuario) return null;
     try {
       const id = await repo.guardarNomina(
         db,
@@ -103,7 +104,7 @@ export function Cargar({ alGuardar }: { alGuardar: (nominaId: string) => void })
             : e,
         ),
       );
-      alGuardar(id);
+      return id;
     } catch (error) {
       setEstados((prev) =>
         prev.map((e, i) =>
@@ -116,8 +117,37 @@ export function Cargar({ alGuardar }: { alGuardar: (nominaId: string) => void })
             : e,
         ),
       );
+      return null;
     }
   }
+
+  async function guardar(indice: number) {
+    const id = await guardarUno(indice);
+    if (id) alGuardar(id);
+  }
+
+  async function guardarTodas() {
+    setGuardandoTodas(true);
+    try {
+      for (let i = 0; i < estados.length; i++) {
+        const estado = estados[i];
+        if (estado?.fase !== 'listo') continue;
+        if (!elegible(estado)) continue;
+        await guardarUno(i);
+      }
+    } finally {
+      setGuardandoTodas(false);
+    }
+  }
+
+  function elegible(estado: Estado): boolean {
+    if (estado.fase !== 'listo') return false;
+    return estado.validacion.codigosSinClasificar.length === 0 && estado.duplicada === null;
+  }
+
+  const listasParaLote = estados.filter(
+    (e) => e.fase === 'listo' && puedo('cargar-nomina') && elegible(e),
+  ).length;
 
   return (
     <>
@@ -160,6 +190,23 @@ export function Cargar({ alGuardar }: { alGuardar: (nominaId: string) => void })
           }}
         />
       </div>
+
+      {listasParaLote >= 2 && (
+        <div className="entre" style={{ marginTop: 18 }}>
+          <p className="tenue pequeno" style={{ margin: 0 }}>
+            {guardandoTodas
+              ? 'Guardando…'
+              : 'Esto guarda solo mientras te quedes en esta pantalla: si sales sin guardar un archivo pendiente, tendrás que volver a soltarlo.'}
+          </p>
+          <button
+            className="btn primario"
+            disabled={guardandoTodas}
+            onClick={() => void guardarTodas()}
+          >
+            {guardandoTodas ? 'Guardando…' : `Guardar todas las listas (${listasParaLote})`}
+          </button>
+        </div>
+      )}
 
       <div style={{ marginTop: 18 }}>
         {estados.map((estado, i) => (

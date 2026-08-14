@@ -37,6 +37,8 @@ export interface FilaTasaImportada {
 export interface LecturaLibroTasas {
   filas: FilaTasaImportada[];
   errores: string[];
+  /** true si hubo filas válidas y ninguna traía algo en la columna DIF. CAMBIO. */
+  difCambioVacio: boolean;
 }
 
 /** "15/07/2026" o un objeto Date de Excel -> "2026-07-15". Null si no se reconoce. */
@@ -71,9 +73,11 @@ function celdaATasa(valor: unknown): number | null {
 }
 
 /**
- * Solo lee FECHA (columna 1) y TASA BCV (columna 4). DIA y SEMANA GANADERA
- * son contexto para quien lee el archivo: no se guardan en ningún lado,
- * se recalculan siempre a partir de las nóminas y tasas ya cargadas.
+ * Solo lee FECHA (columna 1) y TASA BCV (columna 4). DIA, SEMANA GANADERA y
+ * DIF. CAMBIO son contexto para quien lee el archivo: no se guardan en
+ * ningún lado, se recalculan siempre a partir de las nóminas y tasas ya
+ * cargadas. La columna DIF. CAMBIO sí se inspecciona (columna 5), pero solo
+ * para avisar si vino vacía — su valor nunca se usa.
  */
 export async function leerLibroTasas(bytes: Uint8Array): Promise<LecturaLibroTasas> {
   const libro = new ExcelJS.Workbook();
@@ -87,13 +91,16 @@ export async function leerLibroTasas(bytes: Uint8Array): Promise<LecturaLibroTas
   const errores: string[] = [];
   if (!hoja) {
     errores.push('El archivo no tiene ninguna hoja.');
-    return { filas, errores };
+    return { filas, errores, difCambioVacio: false };
   }
+
+  let huboDifCambio = false;
 
   hoja.eachRow((fila, numeroFila) => {
     if (numeroFila === 1) return; // encabezado
     const celdaFecha = fila.getCell(1).value;
     const celdaTasa = fila.getCell(4).value;
+    const celdaDifCambio = fila.getCell(5).value;
     if (celdaFecha === null || celdaFecha === undefined) return; // fila vacía, se ignora
 
     const fecha = celdaAFechaIso(celdaFecha);
@@ -107,7 +114,10 @@ export async function leerLibroTasas(bytes: Uint8Array): Promise<LecturaLibroTas
       return;
     }
     filas.push({ fecha, tasa });
+    if (celdaDifCambio !== null && celdaDifCambio !== undefined && String(celdaDifCambio).trim() !== '') {
+      huboDifCambio = true;
+    }
   });
 
-  return { filas, errores };
+  return { filas, errores, difCambioVacio: filas.length > 0 && !huboDifCambio };
 }

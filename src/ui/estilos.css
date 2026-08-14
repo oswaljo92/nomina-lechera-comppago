@@ -753,6 +753,14 @@ table.tabla tfoot td {
 }
 .barra-lote .conteo { font-weight: 650; }
 
+.paginacion {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 11px 16px; border-top: 1px solid var(--borde);
+}
+.paginacion-numeros { display: flex; align-items: center; gap: 4px; }
+.paginacion-elipsis { padding: 0 4px; color: var(--texto-3); }
+.paginacion select { width: auto; }
+
 /* ═══════════════════════════════════════════════════════════
    TRAMO TABLETA — riel de iconos
    ═══════════════════════════════════════════════════════════ */
@@ -815,6 +823,17 @@ table.tabla tfoot td {
   .cajon-nav .nav .etiqueta-corta { display: none; }
   .cajon-nav .nav .icono { width: 18px; font-size: 14px; }
   .cajon-nav .nav .cuenta { position: static; margin-left: auto; top: auto; right: auto; font-size: 11px; padding: 0 7px; }
+
+  /* El bloque de perfil dentro del cajón sí tiene ancho de sobra (232px,
+     igual que el riel en escritorio), así que se muestra completo aunque
+     el riel angosto de fuera lo reduzca a solo el ícono. */
+  .cajon-nav .chip-usuario { justify-content: flex-start; padding: 9px 11px; }
+  .cajon-nav .chip-usuario .perfil,
+  .cajon-nav .chip-usuario .rol,
+  .cajon-nav .chip-usuario .nombre-usuario {
+    display: block;
+  }
+  .cajon-nav .entorno { display: block; }
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -935,7 +954,7 @@ table.tabla tfoot td {
 
   .tarjeta > header { padding: 12px 13px; }
   .tarjeta .cuerpo { padding: 13px; }
-  .filtros, .barra-lote { padding: 10px 13px; }
+  .filtros, .barra-lote, .paginacion { padding: 10px 13px; }
   .previsualizacion { padding: 8px; }
 
   /* Campos a 16px: por debajo de ese tamaño los navegadores móviles hacen
