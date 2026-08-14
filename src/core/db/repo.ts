@@ -404,13 +404,17 @@ function manualesDe(db: BaseDatos, registroId: string): ConceptoManual[] {
     .todos<Fila>('SELECT * FROM conceptos_manual WHERE registro_id = ? ORDER BY creado_en', [
       registroId,
     ])
-    .map((f) => ({
-      id: String(f['id']),
-      codigo: String(f['codigo']),
-      nombre: String(f['nombre']),
-      centimos: Number(f['centimos']),
-      litros: f['litros'] === null ? null : Number(f['litros']),
-    }));
+    .map((f) => {
+      const efecto = f['efecto'];
+      return {
+        id: String(f['id']),
+        codigo: String(f['codigo']),
+        nombre: String(f['nombre']),
+        centimos: Number(f['centimos']),
+        litros: f['litros'] === null ? null : Number(f['litros']),
+        efecto: efecto === 'suma' || efecto === 'resta' ? efecto : null,
+      };
+    });
 }
 
 function notaDebitoDe(db: BaseDatos, registroId: string): ParametrosNotaDebito | null {
@@ -497,18 +501,26 @@ export function historialProveedor(
 // Conceptos manuales, notas de débito y precios
 // ─────────────────────────────────────────────────────────────
 
+export interface DatosConceptoManual {
+  codigo: string;
+  nombre: string;
+  centimos: number;
+  litros: number | null;
+  efecto: 'suma' | 'resta' | null;
+}
+
 export async function agregarConceptoManual(
   db: BaseDatos,
   autor: Autor,
   registroIds: string[],
-  datos: { codigo: string; nombre: string; centimos: number; litros: number | null },
+  datos: DatosConceptoManual,
 ): Promise<void> {
   await db.transaccionAsync(async () => {
     for (const rid of registroIds) {
       db.correr(
         `INSERT INTO conceptos_manual
-           (id, registro_id, codigo, nombre, centimos, litros, usuario_id, creado_en)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+           (id, registro_id, codigo, nombre, centimos, litros, efecto, usuario_id, creado_en)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           nuevoId('m_'),
           rid,
@@ -516,6 +528,7 @@ export async function agregarConceptoManual(
           datos.nombre,
           datos.centimos,
           datos.litros,
+          datos.efecto,
           autor.id,
           new Date().toISOString(),
         ],
@@ -526,6 +539,19 @@ export async function agregarConceptoManual(
       registros: registroIds.length,
     });
   });
+}
+
+export async function editarConceptoManual(
+  db: BaseDatos,
+  autor: Autor,
+  id: string,
+  datos: DatosConceptoManual,
+): Promise<void> {
+  db.correr(
+    'UPDATE conceptos_manual SET codigo = ?, nombre = ?, centimos = ?, litros = ?, efecto = ? WHERE id = ?',
+    [datos.codigo, datos.nombre, datos.centimos, datos.litros, datos.efecto, id],
+  );
+  await registrarBitacora(db, autor, 'editar-concepto-manual', 'registro', id, { ...datos });
 }
 
 export async function eliminarConceptoManual(

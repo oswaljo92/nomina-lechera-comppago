@@ -356,6 +356,7 @@ await repo.agregarConceptoManual(db, admin, [prolamar.id], {
   nombre: 'Ajuste de calidad',
   centimos: 5000000,
   litros: 500,
+  efecto: null,
 });
 const prolamar2 = repo.registrosDeNomina(db, idLeche).find((r) => r.id === prolamar.id)!;
 ok(prolamar2.manuales.length === 1, 'Concepto manual guardado');
@@ -364,6 +365,44 @@ ok(recalculo.bruto === prolamar.bruto, 'El concepto manual NO altera el bruto');
 ok(recalculo.neto === prolamar.neto, 'El concepto manual NO altera el neto a pagar');
 ok(recalculo.totalFacturar === prolamar.totalFacturar, 'El concepto manual NO altera el total a facturar');
 ok(recalculo.manuales.length === 1, 'Pero sí aparece en el comprobante');
+
+// ═══ Conceptos manuales: con efecto (suma/resta), editar y eliminar ═══
+const manualId = prolamar2.manuales[0]!.id;
+await repo.agregarConceptoManual(db, admin, [prolamar.id], {
+  codigo: '0090',
+  nombre: 'Faltante',
+  centimos: 200000,
+  litros: 30,
+  efecto: 'resta',
+});
+const prolamar3 = repo.registrosDeNomina(db, idLeche).find((r) => r.id === prolamar.id)!;
+const recalculo2 = calcularRegistro(prolamar3.leido, repo.catalogoMapa(db), prolamar3.manuales, null);
+ok(recalculo2.neto === prolamar.neto - 200000, 'Con efecto "resta" SÍ baja el neto a pagar');
+ok(
+  recalculo2.totalFacturar === prolamar.totalFacturar - 200000,
+  'Con efecto "resta" SÍ baja el total a facturar',
+);
+ok(recalculo2.bruto === prolamar.bruto, 'Pero el bruto sigue intacto');
+
+await repo.editarConceptoManual(db, admin, manualId, {
+  codigo: 'M01',
+  nombre: 'Ajuste de calidad',
+  centimos: 5000000,
+  litros: 500,
+  efecto: 'suma',
+});
+const prolamar4 = repo.registrosDeNomina(db, idLeche).find((r) => r.id === prolamar.id)!;
+const editado = prolamar4.manuales.find((m) => m.id === manualId)!;
+ok(editado.efecto === 'suma', 'editarConceptoManual actualiza el efecto');
+const recalculo3 = calcularRegistro(prolamar4.leido, repo.catalogoMapa(db), prolamar4.manuales, null);
+ok(
+  recalculo3.neto === prolamar.neto + 5000000 - 200000,
+  'El neto refleja la suma editada y la resta del otro concepto',
+);
+
+await repo.eliminarConceptoManual(db, admin, manualId);
+const prolamar5 = repo.registrosDeNomina(db, idLeche).find((r) => r.id === prolamar.id)!;
+ok(prolamar5.manuales.length === 1, 'eliminarConceptoManual quita solo ese concepto');
 
 // ═══ Bitácora encadenada ═══
 console.log(`\n${B}Bitácora encadenada${N}`);

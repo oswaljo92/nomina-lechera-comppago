@@ -162,13 +162,19 @@ export interface ConceptoCatalogo {
 // Cálculo
 // ─────────────────────────────────────────────────────────────
 
-/** Concepto añadido a mano. Es INFORMATIVO: no altera ningún total. */
+/**
+ * Concepto añadido a mano. Por defecto es informativo (`efecto: null`): no
+ * altera ningún total. Si `efecto` es 'suma' o 'resta', ajusta el neto a
+ * pagar y el total a facturar (nunca el bruto ni las deducciones, que
+ * siempre reflejan solo lo impreso en el PDF).
+ */
 export interface ConceptoManual {
   id: string;
   codigo: string;
   nombre: string;
   centimos: number;
   litros: number | null; // informativo
+  efecto: 'suma' | 'resta' | null;
 }
 
 export type FechaCalculoNd = 'factura' | 'nota';

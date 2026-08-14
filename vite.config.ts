@@ -1,14 +1,22 @@
+import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath, URL } from 'node:url';
 
 const r = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 
+const pkg = JSON.parse(readFileSync(r('./package.json'), 'utf-8')) as { version: string };
+
 export default defineConfig({
   // Rutas relativas: imprescindible para que el mismo dist/ funcione
   // servido por HTTPS (web) y cargado con file:// desde Electron.
   base: './',
   plugins: [react()],
+  // Versión de la app (package.json), fija en tiempo de build. Igual en web
+  // y en Electron, ya que ambos cargan el mismo dist/.
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
+  },
   resolve: {
     alias: {
       '@core': r('./src/core'),

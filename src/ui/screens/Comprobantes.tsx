@@ -629,9 +629,25 @@ export function Comprobantes({ nominaIdInicial }: { nominaIdInicial?: string }) 
       {dialogo?.tipo === 'manual' && usuario && (
         <ModalConceptoManual
           cantidad={dialogo.ids.length}
+          catalogo={repo.listarCatalogo(db)}
+          existentes={
+            dialogo.ids.length === 1 ? registros.find((r) => r.id === dialogo.ids[0])?.manuales : undefined
+          }
           alCerrar={() => setDialogo(null)}
           alAceptar={(datos) => {
             void repo.agregarConceptoManual(db, usuario, dialogo.ids, datos).then(() => {
+              cambiado();
+              setDialogo(null);
+            });
+          }}
+          alEditar={(id, datos) => {
+            void repo.editarConceptoManual(db, usuario, id, datos).then(() => {
+              cambiado();
+              setDialogo(null);
+            });
+          }}
+          alEliminar={(id) => {
+            void repo.eliminarConceptoManual(db, usuario, id).then(() => {
               cambiado();
               setDialogo(null);
             });

@@ -17,11 +17,13 @@ import type {
  *
  *   BRUTO             = Σ conceptos de clase «pago»
  *   DEDUCCIONES       = Σ conceptos de clase «deducción»
- *   NETO A PAGAR      = Bruto − Deducciones
- *   TOTAL A FACTURAR  = Bruto − Σ deducciones marcadas «restaFacturacion»
+ *   NETO A PAGAR      = Bruto − Deducciones + Σ manuales con efecto
+ *   TOTAL A FACTURAR  = Bruto − Σ deducciones marcadas «restaFacturacion» + Σ manuales con efecto
  *
- * Los conceptos manuales son informativos por decisión expresa: aparecen en el
- * comprobante pero NO entran en ninguna de estas cuatro cifras.
+ * Bruto y Deducciones nunca incluyen conceptos manuales: siempre reflejan
+ * solo lo impreso en el PDF, para no romper el cuadre contra el PDF que se
+ * hace al cargar la nómina. Un concepto manual sin `efecto` (el valor por
+ * defecto) sigue siendo puramente informativo, como siempre.
  */
 export function calcularRegistro(
   registro: RegistroLeido,
@@ -53,13 +55,18 @@ export function calcularRegistro(
     }
   }
 
+  const ajusteManual = manuales.reduce(
+    (acc, m) => acc + (m.efecto === 'suma' ? m.centimos : m.efecto === 'resta' ? -m.centimos : 0),
+    0,
+  );
+
   return {
     registro,
     lineas,
     bruto,
     deducciones,
-    neto: bruto - deducciones,
-    totalFacturar: bruto - restaDeFacturacion,
+    neto: bruto - deducciones + ajusteManual,
+    totalFacturar: bruto - restaDeFacturacion + ajusteManual,
     manuales,
     notaDebito,
     validacion: validarRegistro(registro, catalogo),
@@ -133,7 +140,9 @@ export function calcularNotaDebito(
     tasaFin: tasaFin!,
     diferenciaTasa,
     montoUsd,
-    centimos: Math.round(montoUsd * diferenciaTasa * 100),
+    // Redondeada hacia arriba (nunca al más cercano), incluso si el monto
+    // fuera negativo: es la decisión explícita para la nota de débito.
+    centimos: Math.ceil(montoUsd * diferenciaTasa * 100),
   };
 }
 

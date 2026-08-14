@@ -1,5 +1,6 @@
 import { fechaAMostrar, formatearBs, formatearDecimal, formatearEntero } from '../parser/numeros.ts';
 import type { DatosComprobante } from './comprobante.ts';
+import type { NotaDebitoCalculada } from '../types.ts';
 
 /**
  * Descripción del comprobante como una lista de primitivas de dibujo.
@@ -433,9 +434,32 @@ export function dibujarComprobante(
   // Con dos lados aplicando a la vez hace falta una línea de detalle para
   // cada uno, en vez de una sola.
   const dosLineasNd = Boolean(ndComb?.aplica && ndComb.leche?.aplica && ndComb.transporte?.aplica);
+
+  // Filas de la tabla de cálculo (Leche/Flete si combinado, una sola si no).
+  // Se calcula antes de `altoCaja` porque su cantidad de filas define cuánto
+  // debe crecer la caja para no dejar texto fuera del borde.
+  const filasTabla: { serv: string; r: NotaDebitoCalculada }[] = [];
+  if (ndComb) {
+    if (ndComb.leche?.aplica) filasTabla.push({ serv: 'Leche', r: ndComb.leche });
+    if (ndComb.transporte?.aplica) filasTabla.push({ serv: 'Flete', r: ndComb.transporte });
+  } else if (nd?.aplica) {
+    filasTabla.push({ serv: datos.tipo === 'leche' ? 'Leche' : 'Flete', r: nd });
+  }
+
+  // Si ningún lado aplica, `filasTabla` queda vacío (ver arriba) — hace
+  // falta un alto fijo aparte para los motivos en rojo de esa rama.
+  const aplicaNd = ndComb ? ndComb.aplica : Boolean(nd?.aplica);
+
   const filasTotales = 2 + (mostrarNd ? 1 : 0);
   const altoFila = 26;
-  const altoDetalleNd = mostrarNd ? (dosLineasNd ? 25 : 16) : 0;
+  // Caso aplica: desglose Leche/Flete (2 líneas de 9pt) + cabecera de tabla
+  // (12) + una fila de 9pt por servicio + margen inferior (6).
+  // Caso no aplica: alto fijo para hasta 2 líneas de motivo, igual que antes.
+  const altoDetalleNd = !mostrarNd
+    ? 0
+    : aplicaNd
+      ? (dosLineasNd ? 18 : 0) + (filasTabla.length > 0 ? 12 + filasTabla.length * 9 + 6 : 0)
+      : 16;
   const altoCaja = filasTotales * altoFila + altoDetalleNd;
 
   l.rect({
@@ -448,10 +472,11 @@ export function dibujarComprobante(
     radio: 5,
   });
 
-  // Neto a pagar, destacado en negativo.
+  // Total a facturar, destacado en negativo (antes era Neto a pagar: se
+  // intercambió el orden y los colores a pedido).
   l.rect({ x: izq + 1, y: y + 1, ancho: ANCHO_UTIL - 2, alto: altoFila - 1, relleno: COLORES.verde });
-  l.texto('NETO A PAGAR', izq + 12, y + 17, { tam: 9.5, peso: 'bold', color: COLORES.blanco });
-  l.texto(`${formatearBs(datos.neto)} Bs`, der - 12, y + 18, {
+  l.texto('TOTAL A FACTURAR', izq + 12, y + 17, { tam: 9.5, peso: 'bold', color: COLORES.blanco });
+  l.texto(`${formatearBs(datos.totalFacturar)} Bs`, der - 12, y + 18, {
     tam: 13,
     peso: 'bold',
     color: COLORES.blanco,
@@ -461,8 +486,8 @@ export function dibujarComprobante(
 
   l.rect({ x: izq + 1, y, ancho: ANCHO_UTIL - 2, alto: altoFila, relleno: COLORES.verdeClaro });
   l.linea(izq, y, der, COLORES.linea, 0.6);
-  l.texto('TOTAL A FACTURAR', izq + 12, y + 17, { tam: 9.5, peso: 'bold' });
-  l.texto(`${formatearBs(datos.totalFacturar)} Bs`, der - 12, y + 18, {
+  l.texto('NETO A PAGAR', izq + 12, y + 17, { tam: 9.5, peso: 'bold' });
+  l.texto(`${formatearBs(datos.neto)} Bs`, der - 12, y + 18, {
     tam: 13,
     peso: 'bold',
     alineacion: 'der',
@@ -471,8 +496,7 @@ export function dibujarComprobante(
 
   if (mostrarNd) {
     l.linea(izq, y, der, COLORES.linea, 0.6);
-    const aplica = ndComb ? ndComb.aplica : Boolean(nd?.aplica);
-    if (aplica) {
+    if (aplicaNd) {
       const centimosNd = ndComb ? ndComb.centimos : (nd as { centimos: number }).centimos;
       l.texto('NOTA DE DÉBITO', izq + 12, y + 17, { tam: 9.5, peso: 'bold' });
       l.texto(`${formatearBs(centimosNd)} Bs`, der - 12, y + 18, {
@@ -482,28 +506,40 @@ export function dibujarComprobante(
       });
       y += altoFila;
 
-      const formula = (etiqueta: string, r: { litrosBase: number; precioUsd: number; tasaFin: number; tasaIni: number }) => {
-        const precioBsL = r.precioUsd * r.tasaFin;
-        return (
-          `${etiqueta}${formatearEntero(r.litrosBase)} L × ${formatearDecimal(precioBsL, 4)} Bs/L × ` +
-          `(${formatearDecimal(r.tasaFin)} ${MENOS} ${formatearDecimal(r.tasaIni)})`
-        );
-      };
-
-      const detalles: string[] = [];
-      if (ndComb) {
-        if (ndComb.leche?.aplica) detalles.push(formula('Leche · ', ndComb.leche));
-        if (ndComb.transporte?.aplica) detalles.push(formula('Flete · ', ndComb.transporte));
-      } else if (nd?.aplica) {
-        detalles.push(`${formula('', nd)}   ·   tasa del ${fechaAMostrar(nd.fechaTasaFin)}`);
-      }
-      detalles.forEach((linea, i) => {
-        l.texto(l.recortar(linea, ANCHO_UTIL - 24, 7.5), izq + 12, y + 4 + i * 9, {
+      // Desglose del monto de ND por leche y por flete, cuando ambos aplican.
+      // Se reutilizan las filas ya narrowed de `filasTabla` (ambas existen
+      // porque `dosLineasNd` implica que las dos empujaron su fila arriba).
+      if (dosLineasNd) {
+        const centimosLeche = filasTabla.find((f) => f.serv === 'Leche')!.r.centimos;
+        const centimosFlete = filasTabla.find((f) => f.serv === 'Flete')!.r.centimos;
+        l.texto(`Leche: ${formatearBs(centimosLeche)} Bs`, izq + 12, y + 4, {
           tam: 7.5,
           color: COLORES.tenue,
         });
-      });
-      y += altoDetalleNd;
+        l.texto(`Flete: ${formatearBs(centimosFlete)} Bs`, izq + 12, y + 13, {
+          tam: 7.5,
+          color: COLORES.tenue,
+        });
+        y += 18;
+      }
+
+      // Tabla con los datos del cálculo (sin la multiplicación), precio en $/L.
+      if (filasTabla.length > 0) {
+        const cols = [izq + 12, izq + 60, izq + 130, izq + 210, izq + 290];
+        ['SERV', 'LITROS', 'PRECIO $/L', 'TASA INICIO', 'TASA FINAL'].forEach((h, i) =>
+          l.texto(h, cols[i]!, y + 4, { tam: 6.5, peso: 'bold', color: COLORES.suave }),
+        );
+        y += 12;
+        filasTabla.forEach(({ serv, r }) => {
+          l.texto(serv, cols[0]!, y, { tam: 7.5, color: COLORES.tenue });
+          l.texto(formatearEntero(r.litrosBase), cols[1]!, y, { tam: 7.5, color: COLORES.tenue });
+          l.texto(formatearDecimal(r.precioUsd, 4), cols[2]!, y, { tam: 7.5, color: COLORES.tenue });
+          l.texto(formatearDecimal(r.tasaIni), cols[3]!, y, { tam: 7.5, color: COLORES.tenue });
+          l.texto(formatearDecimal(r.tasaFin), cols[4]!, y, { tam: 7.5, color: COLORES.tenue });
+          y += 9;
+        });
+        y += 6;
+      }
     } else {
       l.rect({ x: izq + 1, y, ancho: ANCHO_UTIL - 2, alto: altoFila + altoDetalleNd, relleno: COLORES.errorFondo });
       l.texto('NOTA DE DÉBITO', izq + 12, y + 16, { tam: 9.5, peso: 'bold', color: COLORES.error });
@@ -525,9 +561,9 @@ export function dibujarComprobante(
 
   y += 18;
 
-  // ── Conceptos manuales, informativos ──
+  // ── Conceptos manuales ──
   if (datos.manuales.length > 0) {
-    const alto = 30 + datos.manuales.length * 14;
+    const alto = 20 + datos.manuales.length * 14;
     l.rect({
       x: izq,
       y,
@@ -546,17 +582,12 @@ export function dibujarComprobante(
     let yy = y + 27;
     for (const m of datos.manuales) {
       l.texto(m.codigo, izq + 12, yy, { tam: 8, color: COLORES.tenue });
-      const etiqueta = m.litros !== null ? `${m.nombre}  ·  ${formatearEntero(m.litros)} L` : m.nombre;
+      const etiqueta = m.litros !== null ? `${m.nombre}  ·  ${formatearEntero(m.litros)} L sin pagar` : m.nombre;
       l.texto(l.recortar(etiqueta, ANCHO_UTIL - 190, 9), xNombre + 12, yy, { tam: 9 });
-      l.texto(formatearBs(m.centimos), der - 12, yy, { tam: 9, alineacion: 'der' });
+      const signo = m.efecto === 'suma' ? '+ ' : m.efecto === 'resta' ? `${MENOS} ` : '';
+      l.texto(`${signo}${formatearBs(m.centimos)}`, der - 12, yy, { tam: 9, alineacion: 'der' });
       yy += 14;
     }
-    l.texto(
-      'Información de referencia. No afecta el bruto, el neto a pagar ni el total a facturar.',
-      izq + 12,
-      yy - 1,
-      { tam: 7, color: COLORES.suave },
-    );
     y += alto + 14;
   }
 

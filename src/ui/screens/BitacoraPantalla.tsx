@@ -24,6 +24,7 @@ const ETIQUETAS: Record<string, string> = {
   'cargar-tasa': 'Cargó una tasa del BCV',
   'eliminar-tasa': 'Eliminó una tasa',
   'concepto-manual': 'Agregó un concepto manual',
+  'editar-concepto-manual': 'Editó un concepto manual',
   'quitar-concepto-manual': 'Quitó un concepto manual',
   'nota-debito': 'Configuró notas de débito',
   'quitar-nota-debito': 'Quitó notas de débito',

@@ -42,15 +42,9 @@ export function MiCuenta({ alCerrar, alSalir }: { alCerrar: () => void; alSalir:
       descripcion={usuario.rol === 'admin' ? 'Administrador' : 'Usuario normal'}
       alCerrar={alCerrar}
       pie={
-        <>
-          <button className="btn peligro" onClick={alSalir}>
-            Cerrar sesión
-          </button>
-          <span className="crece" />
-          <button className="btn" onClick={alCerrar}>
-            Cerrar
-          </button>
-        </>
+        <button className="btn" onClick={alCerrar}>
+          Cerrar
+        </button>
       }
     >
       <div className="rejilla dos" style={{ marginBottom: 16 }}>
@@ -70,6 +64,16 @@ export function MiCuenta({ alCerrar, alSalir }: { alCerrar: () => void; alSalir:
         />
       </div>
 
+      <button className="btn peligro ancho" onClick={alSalir}>
+        Cerrar sesión
+      </button>
+
+      <div className="sep" />
+      <p className="tenue pequeno" style={{ margin: 0 }}>
+        Creado por Oswaldo Hernández · versión {__APP_VERSION__}
+      </p>
+
+      <div className="sep" />
       <h3 style={{ marginBottom: 10 }}>Cambiar mi contraseña</h3>
       {mensaje && <Aviso nivel={mensaje.nivel === 'ok' ? 'ok' : 'error'}>{mensaje.texto}</Aviso>}
 

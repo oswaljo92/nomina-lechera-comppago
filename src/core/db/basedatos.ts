@@ -98,6 +98,16 @@ export class BaseDatos {
         );
       }
     }
+
+    // Migración aditiva: agrega la columna `efecto` a conceptos_manual si el
+    // archivo es de antes de que existiera. No rompe nada y no requiere
+    // subir VERSION_ESQUEMA (eso fuerza a respaldar y borrar la base
+    // entera, pensado para cambios que sí rompen compatibilidad).
+    const columnasManual = this.todos<Fila>('PRAGMA table_info(conceptos_manual)');
+    if (!columnasManual.some((c) => c['name'] === 'efecto')) {
+      this.db.exec('ALTER TABLE conceptos_manual ADD COLUMN efecto TEXT');
+    }
+
     this.fijarMeta('version_esquema', String(VERSION_ESQUEMA));
   }
 

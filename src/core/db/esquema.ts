@@ -123,7 +123,8 @@ CREATE TABLE IF NOT EXISTS litros_dia (
   PRIMARY KEY (registro_id, fecha)
 );
 
--- Conceptos añadidos a mano. Informativos: no alteran ningún total.
+-- Conceptos añadidos a mano. Por defecto informativos (efecto NULL); si
+-- efecto es 'suma'/'resta', ajustan el neto a pagar y el total a facturar.
 CREATE TABLE IF NOT EXISTS conceptos_manual (
   id          TEXT PRIMARY KEY,
   registro_id TEXT NOT NULL REFERENCES registros(id) ON DELETE CASCADE,
@@ -131,6 +132,7 @@ CREATE TABLE IF NOT EXISTS conceptos_manual (
   nombre      TEXT NOT NULL,
   centimos    INTEGER NOT NULL,
   litros      INTEGER,
+  efecto      TEXT,
   usuario_id  TEXT NOT NULL,
   creado_en   TEXT NOT NULL
 );
