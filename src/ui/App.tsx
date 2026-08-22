@@ -37,10 +37,12 @@ function PerfilPie({
   usuario,
   entorno,
   onAbrir,
+  onSalir,
 }: {
   usuario: UsuarioSesion;
   entorno: string;
   onAbrir: () => void;
+  onSalir: () => void;
 }) {
   const inicial = usuario.nombre.trim().charAt(0).toUpperCase();
   return (
@@ -51,6 +53,9 @@ function PerfilPie({
           <span className="perfil">{usuario.nombre}</span>
           <span className="rol">{usuario.rol === 'admin' ? 'Administrador' : 'Usuario normal'}</span>
         </span>
+      </button>
+      <button className="btn-salir-riel" onClick={onSalir}>
+        Cerrar sesión
       </button>
       <div className="entorno">{entorno}</div>
     </div>
@@ -162,6 +167,10 @@ export function App() {
     if (id !== 'comprobantes') setNominaAbierta(undefined);
   }
 
+  function salir() {
+    void guardarYa().then(() => cerrarSesion());
+  }
+
   const inicial = usuario.nombre.trim().charAt(0).toUpperCase();
 
   return (
@@ -200,6 +209,7 @@ export function App() {
           usuario={usuario}
           entorno={plataforma.etiqueta}
           onAbrir={() => setMiCuenta(true)}
+          onSalir={salir}
         />
       </aside>
 
@@ -233,6 +243,7 @@ export function App() {
               setMiCuenta(true);
               setMenuAbierto(false);
             }}
+            onSalir={salir}
           />
         </div>
       </div>

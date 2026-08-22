@@ -4,7 +4,13 @@ import { Aviso, Campo, Dato, Modal } from './comunes.tsx';
 import { cambiarPropiaContrasena, validarContrasena } from '../../core/auth/usuarios.ts';
 import { fechaAMostrar } from '../../core/parser/numeros.ts';
 
-/** Datos del usuario en sesión, cambio de contraseña y cierre de sesión. */
+/**
+ * Datos del usuario en sesión y cambio de contraseña. El botón de cerrar
+ * sesión vive en el riel lateral (ver `PerfilPie` en App.tsx) salvo en el
+ * tramo teléfono, donde el riel está oculto y este modal es el único lugar
+ * alcanzable — por eso `alSalir` se mantiene, pero el botón que lo usa se
+ * oculta con CSS fuera de ese tramo (`.salir-movil` en estilos.css).
+ */
 export function MiCuenta({ alCerrar, alSalir }: { alCerrar: () => void; alSalir: () => void }) {
   const { db, usuario, plataforma, cambiado } = useApp();
   const [actual, setActual] = useState('');
@@ -64,7 +70,7 @@ export function MiCuenta({ alCerrar, alSalir }: { alCerrar: () => void; alSalir:
         />
       </div>
 
-      <button className="btn peligro ancho" onClick={alSalir}>
+      <button className="btn peligro ancho salir-movil" onClick={alSalir}>
         Cerrar sesión
       </button>
 

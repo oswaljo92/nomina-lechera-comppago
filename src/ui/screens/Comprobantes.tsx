@@ -13,6 +13,7 @@ import { nombreLote } from '../../core/receipt/nombreArchivo.ts';
 import {
   empaquetarZip,
   generarComprobantes,
+  generarNotasDebito,
   type Formato,
   type ItemAGenerar,
 } from '../salida/generar.ts';
@@ -265,6 +266,78 @@ export function Comprobantes({ nominaIdInicial }: { nominaIdInicial?: string }) 
     }
   }
 
+  /** true si la unidad (individual o combinada leche+flete) tiene una ND calculable. */
+  function ndAplica(datos: DatosComprobante): boolean {
+    return datos.notaDebitoCombinada ? datos.notaDebitoCombinada.aplica : Boolean(datos.notaDebito?.aplica);
+  }
+
+  /**
+   * Nota de débito como documento aparte (ver `dibujarNotaDebito`), no como
+   * sección del comprobante completo. Omite en silencio los proveedores sin
+   * ND calculable (el botón por fila ya no aparece para ellos; en el lote
+   * puede haber una mezcla, así que aquí sí hace falta filtrar y avisar).
+   */
+  async function descargarNd(ids: string[], formato: Formato, comoLote: boolean) {
+    if (!usuario) return;
+    setMensaje(null);
+    const candidatos = registros.filter((r) => ids.includes(r.id));
+    const omitidos = candidatos.filter((r) => !ndAplica(unidadDe(r).datos)).length;
+    const items: ItemAGenerar[] = candidatos
+      .filter((r) => ndAplica(unidadDe(r).datos))
+      .map((r) => {
+        const u = unidadDe(r);
+        return { registroIds: u.registroIds, datos: u.datos, numeroNomina: nomina!.numero };
+      });
+
+    if (items.length === 0) {
+      setMensaje({ nivel: 'error', texto: 'Ninguno de los seleccionados tiene una nota de débito calculable.' });
+      return;
+    }
+
+    setProgreso({ hechos: 0, total: items.length, nombre: '' });
+    try {
+      const archivos = await generarNotasDebito(items, {
+        formato,
+        opciones,
+        alAvanzar: (hechos, total, nombre) => setProgreso({ hechos, total, nombre }),
+      });
+
+      if (comoLote && archivos.length > 1) {
+        const zip = await empaquetarZip(archivos);
+        await plataforma.archivos.guardar(
+          nombreLote(nomina!.anio, nomina!.numero, 'notas-debito'),
+          zip,
+        );
+      } else {
+        for (const a of archivos) await plataforma.archivos.guardar(a.nombre, a.blob);
+      }
+
+      await repo.registrarDescargas(
+        db,
+        usuario,
+        archivos.flatMap((a) =>
+          a.registroIds.map((registroId) => ({ registroId, folio: a.folio, formato, archivo: a.nombre })),
+        ),
+      );
+      cambiado();
+      const base =
+        comoLote && archivos.length > 1
+          ? `Se generó un ZIP con ${archivos.length} nota(s) de débito en ${formato.toUpperCase()}.`
+          : `Se descargó ${archivos.length} nota(s) de débito en ${formato.toUpperCase()}.`;
+      setMensaje({
+        nivel: 'ok',
+        texto: omitidos > 0 ? `${base} Se omitieron ${omitidos} sin ND calculable.` : base,
+      });
+    } catch (error) {
+      setMensaje({
+        nivel: 'error',
+        texto: `No se pudieron generar las notas de débito: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    } finally {
+      setProgreso(null);
+    }
+  }
+
   const registroPrevia =
     dialogo?.tipo === 'previa' ? registros.find((r) => r.id === dialogo.id) : undefined;
 
@@ -420,6 +493,17 @@ export function Comprobantes({ nominaIdInicial }: { nominaIdInicial?: string }) 
           >
             ⬇ ZIP en imagen
           </button>
+          <button
+            className="btn chico"
+            disabled={
+              elegidos.filter((r) => ndAplica(unidadDe(r).datos)).length === 0 ||
+              progreso !== null ||
+              !puedo('generar-comprobante')
+            }
+            onClick={() => void descargarNd(elegidos.map((r) => r.id), 'pdf', true)}
+          >
+            ⬇ ZIP notas de débito
+          </button>
         </div>
 
         <div className="tabla-envoltura tabla-adaptable">
@@ -444,6 +528,10 @@ export function Comprobantes({ nominaIdInicial }: { nominaIdInicial?: string }) 
                 const yaDescargado = descargas.get(r.id);
                 const candidato = candidatoPorCodigo.get(r.leido.codigo);
                 const contraparte = contraparteDe(r.leido.codigo);
+                // La unidad (individual o combinada) es la que de verdad
+                // decide si hay ND que descargar aparte — el `nd` de arriba
+                // es solo del lado de esta fila, no del combinado.
+                const ndDescargable = ndAplica(unidadDe(r).datos);
                 return (
                   <tr key={r.id} className={seleccion.has(r.id) ? 'elegida' : undefined}>
                     <td className="selector">
@@ -564,6 +652,16 @@ export function Comprobantes({ nominaIdInicial }: { nominaIdInicial?: string }) 
                       >
                         IMG
                       </button>
+                      {ndDescargable && (
+                        <button
+                          className="btn chico"
+                          title="Descargar solo la nota de débito"
+                          disabled={progreso !== null || !puedo('generar-comprobante')}
+                          onClick={() => void descargarNd([r.id], 'pdf', false)}
+                        >
+                          ND
+                        </button>
+                      )}
                     </td>
                   </tr>
                 );

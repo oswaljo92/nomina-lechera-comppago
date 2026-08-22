@@ -168,17 +168,19 @@ export interface Hoja {
   alto: number;
 }
 
-export function dibujarComprobante(
+/**
+ * Logo/razón social/RIF/dirección/contacto, más el aviso si la fábrica no
+ * tiene empresa asignada. Igual en el comprobante completo y en la nota de
+ * débito independiente.
+ */
+function dibujarEncabezadoEmpresa(
+  l: Lienzo,
   datos: DatosComprobante,
-  opciones: OpcionesDibujo,
-  medir: Medidor,
-): Hoja {
-  const l = new Lienzo(medir);
-  const izq = MARGEN;
-  const der = ANCHO_PT - MARGEN;
-  let y = MARGEN;
-
-  // ── Encabezado de la empresa ──
+  izq: number,
+  der: number,
+  y0: number,
+): number {
+  let y = y0;
   const altoLogo = 62;
   const xTextoEmpresa = izq + (datos.empresa?.logo ? altoLogo + 14 : 0);
 
@@ -214,7 +216,6 @@ export function dibujarComprobante(
   l.linea(izq, y, der, COLORES.verde, 2.2);
   y += 16;
 
-  // ── Aviso si la fábrica no tiene empresa ──
   if (!datos.empresa) {
     const alto = 26;
     l.rect({
@@ -240,8 +241,27 @@ export function dibujarComprobante(
     y += alto + 8;
   }
 
-  // ── Identificación del documento ──
-  l.texto('COMPROBANTE DE PAGO', izq, y, { tam: 13, peso: 'bold', color: COLORES.verde });
+  return y;
+}
+
+/**
+ * Título del documento + folio + nómina/fechas + datos del proveedor. Igual
+ * en el comprobante completo y en la nota de débito independiente, salvo el
+ * título (parametrizado) y las fechas de factura/ND (siempre visibles aquí,
+ * porque en la nota de débito son el dato principal).
+ */
+function dibujarBloqueIdentificacion(
+  l: Lienzo,
+  datos: DatosComprobante,
+  izq: number,
+  der: number,
+  y0: number,
+  opciones: OpcionesDibujo,
+  titulo: string,
+): number {
+  let y = y0;
+
+  l.texto(titulo, izq, y, { tam: 13, peso: 'bold', color: COLORES.verde });
   l.texto('FOLIO', der, y - 8, { tam: 7, peso: 'bold', color: COLORES.suave, alineacion: 'der' });
   l.texto(datos.folio, der, y + 2, { tam: 12, peso: 'bold', color: COLORES.verde, alineacion: 'der' });
   y += 14;
@@ -331,6 +351,82 @@ export function dibujarComprobante(
   y += Math.ceil(campos.length / porFila) * 26 + 4;
   l.linea(izq, y, der);
   y += 16;
+
+  return y;
+}
+
+/** Filas de la tabla de cálculo de ND (Leche/Flete si combinado, una si no). */
+function datosDetalleNd(datos: DatosComprobante): {
+  dosLineasNd: boolean;
+  filasTabla: { serv: string; r: NotaDebitoCalculada }[];
+} {
+  const nd = datos.notaDebito;
+  const ndComb = datos.notaDebitoCombinada;
+  const dosLineasNd = Boolean(ndComb?.aplica && ndComb.leche?.aplica && ndComb.transporte?.aplica);
+  const filasTabla: { serv: string; r: NotaDebitoCalculada }[] = [];
+  if (ndComb) {
+    if (ndComb.leche?.aplica) filasTabla.push({ serv: 'Leche', r: ndComb.leche });
+    if (ndComb.transporte?.aplica) filasTabla.push({ serv: 'Flete', r: ndComb.transporte });
+  } else if (nd?.aplica) {
+    filasTabla.push({ serv: datos.tipo === 'leche' ? 'Leche' : 'Flete', r: nd });
+  }
+  return { dosLineasNd, filasTabla };
+}
+
+/** Alto que ocupa `dibujarDetalleNd` para el caso en que la ND sí aplica. */
+function altoDetalleNd(dosLineasNd: boolean, filasTablaLength: number): number {
+  return (dosLineasNd ? 18 : 0) + (filasTablaLength > 0 ? 12 + filasTablaLength * 9 + 6 : 0);
+}
+
+/**
+ * Desglose Leche/Flete del monto de ND (cuando ambos aplican) + tabla con
+ * los datos del cálculo (SERV, LITROS, PRECIO $/L, TASA INICIO, TASA
+ * FINAL), sin mostrar la multiplicación. Reusado por el comprobante
+ * completo y por la nota de débito independiente.
+ */
+function dibujarDetalleNd(l: Lienzo, datos: DatosComprobante, izq: number, y0: number): number {
+  let y = y0;
+  const { dosLineasNd, filasTabla } = datosDetalleNd(datos);
+
+  if (dosLineasNd) {
+    const centimosLeche = filasTabla.find((f) => f.serv === 'Leche')!.r.centimos;
+    const centimosFlete = filasTabla.find((f) => f.serv === 'Flete')!.r.centimos;
+    l.texto(`Leche: ${formatearBs(centimosLeche)} Bs`, izq + 12, y + 4, { tam: 7.5, color: COLORES.tenue });
+    l.texto(`Flete: ${formatearBs(centimosFlete)} Bs`, izq + 12, y + 13, { tam: 7.5, color: COLORES.tenue });
+    y += 18;
+  }
+
+  if (filasTabla.length > 0) {
+    const cols = [izq + 12, izq + 60, izq + 130, izq + 210, izq + 290];
+    ['SERV', 'LITROS', 'PRECIO $/L', 'TASA INICIO', 'TASA FINAL'].forEach((h, i) =>
+      l.texto(h, cols[i]!, y + 4, { tam: 6.5, peso: 'bold', color: COLORES.suave }),
+    );
+    y += 12;
+    filasTabla.forEach(({ serv, r }) => {
+      l.texto(serv, cols[0]!, y, { tam: 7.5, color: COLORES.tenue });
+      l.texto(formatearEntero(r.litrosBase), cols[1]!, y, { tam: 7.5, color: COLORES.tenue });
+      l.texto(formatearDecimal(r.precioUsd, 4), cols[2]!, y, { tam: 7.5, color: COLORES.tenue });
+      l.texto(formatearDecimal(r.tasaIni), cols[3]!, y, { tam: 7.5, color: COLORES.tenue });
+      l.texto(formatearDecimal(r.tasaFin), cols[4]!, y, { tam: 7.5, color: COLORES.tenue });
+      y += 9;
+    });
+    y += 6;
+  }
+  return y;
+}
+
+export function dibujarComprobante(
+  datos: DatosComprobante,
+  opciones: OpcionesDibujo,
+  medir: Medidor,
+): Hoja {
+  const l = new Lienzo(medir);
+  const izq = MARGEN;
+  const der = ANCHO_PT - MARGEN;
+  let y = MARGEN;
+
+  y = dibujarEncabezadoEmpresa(l, datos, izq, der, y);
+  y = dibujarBloqueIdentificacion(l, datos, izq, der, y, opciones, 'COMPROBANTE DE PAGO');
 
   // ── Litros ──
   if (datos.litrosTotal !== null) {
@@ -431,20 +527,7 @@ export function dibujarComprobante(
   const nd = datos.notaDebito;
   const ndComb = datos.notaDebitoCombinada;
   const mostrarNd = opciones.mostrarNotaDebito && (nd !== null || ndComb !== undefined);
-  // Con dos lados aplicando a la vez hace falta una línea de detalle para
-  // cada uno, en vez de una sola.
-  const dosLineasNd = Boolean(ndComb?.aplica && ndComb.leche?.aplica && ndComb.transporte?.aplica);
-
-  // Filas de la tabla de cálculo (Leche/Flete si combinado, una sola si no).
-  // Se calcula antes de `altoCaja` porque su cantidad de filas define cuánto
-  // debe crecer la caja para no dejar texto fuera del borde.
-  const filasTabla: { serv: string; r: NotaDebitoCalculada }[] = [];
-  if (ndComb) {
-    if (ndComb.leche?.aplica) filasTabla.push({ serv: 'Leche', r: ndComb.leche });
-    if (ndComb.transporte?.aplica) filasTabla.push({ serv: 'Flete', r: ndComb.transporte });
-  } else if (nd?.aplica) {
-    filasTabla.push({ serv: datos.tipo === 'leche' ? 'Leche' : 'Flete', r: nd });
-  }
+  const { dosLineasNd, filasTabla } = datosDetalleNd(datos);
 
   // Si ningún lado aplica, `filasTabla` queda vacío (ver arriba) — hace
   // falta un alto fijo aparte para los motivos en rojo de esa rama.
@@ -452,15 +535,8 @@ export function dibujarComprobante(
 
   const filasTotales = 2 + (mostrarNd ? 1 : 0);
   const altoFila = 26;
-  // Caso aplica: desglose Leche/Flete (2 líneas de 9pt) + cabecera de tabla
-  // (12) + una fila de 9pt por servicio + margen inferior (6).
-  // Caso no aplica: alto fijo para hasta 2 líneas de motivo, igual que antes.
-  const altoDetalleNd = !mostrarNd
-    ? 0
-    : aplicaNd
-      ? (dosLineasNd ? 18 : 0) + (filasTabla.length > 0 ? 12 + filasTabla.length * 9 + 6 : 0)
-      : 16;
-  const altoCaja = filasTotales * altoFila + altoDetalleNd;
+  const altoDetalle = !mostrarNd ? 0 : aplicaNd ? altoDetalleNd(dosLineasNd, filasTabla.length) : 16;
+  const altoCaja = filasTotales * altoFila + altoDetalle;
 
   l.rect({
     x: izq,
@@ -505,43 +581,9 @@ export function dibujarComprobante(
         alineacion: 'der',
       });
       y += altoFila;
-
-      // Desglose del monto de ND por leche y por flete, cuando ambos aplican.
-      // Se reutilizan las filas ya narrowed de `filasTabla` (ambas existen
-      // porque `dosLineasNd` implica que las dos empujaron su fila arriba).
-      if (dosLineasNd) {
-        const centimosLeche = filasTabla.find((f) => f.serv === 'Leche')!.r.centimos;
-        const centimosFlete = filasTabla.find((f) => f.serv === 'Flete')!.r.centimos;
-        l.texto(`Leche: ${formatearBs(centimosLeche)} Bs`, izq + 12, y + 4, {
-          tam: 7.5,
-          color: COLORES.tenue,
-        });
-        l.texto(`Flete: ${formatearBs(centimosFlete)} Bs`, izq + 12, y + 13, {
-          tam: 7.5,
-          color: COLORES.tenue,
-        });
-        y += 18;
-      }
-
-      // Tabla con los datos del cálculo (sin la multiplicación), precio en $/L.
-      if (filasTabla.length > 0) {
-        const cols = [izq + 12, izq + 60, izq + 130, izq + 210, izq + 290];
-        ['SERV', 'LITROS', 'PRECIO $/L', 'TASA INICIO', 'TASA FINAL'].forEach((h, i) =>
-          l.texto(h, cols[i]!, y + 4, { tam: 6.5, peso: 'bold', color: COLORES.suave }),
-        );
-        y += 12;
-        filasTabla.forEach(({ serv, r }) => {
-          l.texto(serv, cols[0]!, y, { tam: 7.5, color: COLORES.tenue });
-          l.texto(formatearEntero(r.litrosBase), cols[1]!, y, { tam: 7.5, color: COLORES.tenue });
-          l.texto(formatearDecimal(r.precioUsd, 4), cols[2]!, y, { tam: 7.5, color: COLORES.tenue });
-          l.texto(formatearDecimal(r.tasaIni), cols[3]!, y, { tam: 7.5, color: COLORES.tenue });
-          l.texto(formatearDecimal(r.tasaFin), cols[4]!, y, { tam: 7.5, color: COLORES.tenue });
-          y += 9;
-        });
-        y += 6;
-      }
+      y = dibujarDetalleNd(l, datos, izq, y);
     } else {
-      l.rect({ x: izq + 1, y, ancho: ANCHO_UTIL - 2, alto: altoFila + altoDetalleNd, relleno: COLORES.errorFondo });
+      l.rect({ x: izq + 1, y, ancho: ANCHO_UTIL - 2, alto: altoFila + altoDetalle, relleno: COLORES.errorFondo });
       l.texto('NOTA DE DÉBITO', izq + 12, y + 16, { tam: 9.5, peso: 'bold', color: COLORES.error });
       const motivos: string[] = ndComb
         ? [
@@ -555,7 +597,7 @@ export function dibujarComprobante(
           color: COLORES.error,
         });
       });
-      y += altoFila + altoDetalleNd;
+      y += altoFila + altoDetalle;
     }
   }
 
@@ -595,6 +637,99 @@ export function dibujarComprobante(
   // La hoja se ajusta al contenido en lugar de forzar un A4 completo. Un
   // comprobante corto dejaría media página en blanco, que al enviarse por
   // WhatsApp se ve como una imagen medio vacía.
+  const yPie = Math.max(y + 14, ALTO_MINIMO_PT - MARGEN - 12);
+  l.linea(izq, yPie - 10, der);
+  l.texto(`Folio ${datos.folio}`, der, yPie, { tam: 7, color: COLORES.suave, alineacion: 'der' });
+
+  return { primitivas: l.primitivas, alto: Math.round(yPie + MARGEN - 8) };
+}
+
+/**
+ * Nota de débito como documento independiente: mismo encabezado de
+ * empresa/proveedor que el comprobante de pago completo, pero el cuerpo se
+ * reduce a "DIFERENCIA DE PRECIO SEMANA N" + el desglose de la ND — sin
+ * litros, conceptos, Bruto, Neto a pagar ni Total a facturar.
+ *
+ * Debe llamarse solo cuando la ND aplica (el botón que la ofrece ya se
+ * oculta si no); si de todos modos se llama sin que aplique, se dibuja un
+ * aviso en vez de fallar.
+ */
+export function dibujarNotaDebito(
+  datos: DatosComprobante,
+  opciones: OpcionesDibujo,
+  medir: Medidor,
+): Hoja {
+  const l = new Lienzo(medir);
+  const izq = MARGEN;
+  const der = ANCHO_PT - MARGEN;
+  let y = MARGEN;
+
+  y = dibujarEncabezadoEmpresa(l, datos, izq, der, y);
+  y = dibujarBloqueIdentificacion(
+    l,
+    datos,
+    izq,
+    der,
+    y,
+    { ...opciones, mostrarNotaDebito: true },
+    'NOTA DE DÉBITO',
+  );
+
+  const nd = datos.notaDebito;
+  const ndComb = datos.notaDebitoCombinada;
+  const aplica = ndComb ? ndComb.aplica : Boolean(nd?.aplica);
+
+  y += 6;
+  if (aplica) {
+    const centimosNd = ndComb ? ndComb.centimos : (nd as { centimos: number }).centimos;
+    const { dosLineasNd, filasTabla } = datosDetalleNd(datos);
+    const altoFila = 26;
+    const altoCaja = altoFila + altoDetalleNd(dosLineasNd, filasTabla.length);
+
+    l.rect({ x: izq, y, ancho: ANCHO_UTIL, alto: altoCaja, borde: COLORES.verde, grosor: 1.4, radio: 5 });
+    l.rect({ x: izq + 1, y: y + 1, ancho: ANCHO_UTIL - 2, alto: altoFila - 1, relleno: COLORES.verde });
+    l.texto(`DIFERENCIA DE PRECIO SEMANA ${datos.numero}`, izq + 12, y + 17, {
+      tam: 9.5,
+      peso: 'bold',
+      color: COLORES.blanco,
+    });
+    l.texto(`${formatearBs(centimosNd)} Bs`, der - 12, y + 18, {
+      tam: 13,
+      peso: 'bold',
+      color: COLORES.blanco,
+      alineacion: 'der',
+    });
+    y += altoFila;
+    y = dibujarDetalleNd(l, datos, izq, y);
+  } else {
+    const alto = 42;
+    l.rect({
+      x: izq,
+      y,
+      ancho: ANCHO_UTIL,
+      alto,
+      relleno: COLORES.errorFondo,
+      borde: COLORES.error,
+      grosor: 0.6,
+      radio: 5,
+    });
+    l.texto('NOTA DE DÉBITO NO CALCULADA', izq + 12, y + 16, {
+      tam: 9.5,
+      peso: 'bold',
+      color: COLORES.error,
+    });
+    const motivo = ndComb
+      ? ([
+          ndComb.leche && !ndComb.leche.aplica ? ndComb.leche.motivo : null,
+          ndComb.transporte && !ndComb.transporte.aplica ? ndComb.transporte.motivo : null,
+        ].find((m): m is string => m !== null) ?? '')
+      : ((nd as { motivo: string } | null)?.motivo ?? '');
+    l.texto(l.recortar(motivo, ANCHO_UTIL - 24, 7.5), izq + 12, y + 30, { tam: 7.5, color: COLORES.error });
+    y += alto;
+  }
+
+  y += 18;
+
   const yPie = Math.max(y + 14, ALTO_MINIMO_PT - MARGEN - 12);
   l.linea(izq, yPie - 10, der);
   l.texto(`Folio ${datos.folio}`, der, yPie, { tam: 7, color: COLORES.suave, alineacion: 'der' });

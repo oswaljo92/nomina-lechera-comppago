@@ -31,7 +31,12 @@ import { paginasDesdePdf, type DocumentoPdf } from '../src/core/parser/desdePdfj
 import { parseNomina } from '../src/core/parser/parseNomina.ts';
 import { calcularNotaDebito, calcularRegistro, bsAUsd, usdABs } from '../src/core/calc/calcular.ts';
 import { sha256DeBytes } from '../src/core/auth/hash.ts';
-import { formatearBs, formatearDecimal } from '../src/core/parser/numeros.ts';
+import {
+  formatearBs,
+  formatearDecimal,
+  semanaGanaderaDe,
+  semanasGanaderasDelAnio,
+} from '../src/core/parser/numeros.ts';
 
 const raiz = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const V = '\x1b[32m';
@@ -291,6 +296,38 @@ ok(
   'Un proveedor de QUENACA encabeza con la Empresa Dos',
   enQuenaca?.leido.nombre,
 );
+
+// ═══ Semana ganadera por calendario ═══
+console.log(`\n${B}Semana ganadera por calendario${N}`);
+{
+  // Regresión: la primera versión devolvía siempre las fechas de la semana 1
+  // del año (nunca avanzaba el inicio de semana según el número calculado).
+  const s31 = semanaGanaderaDe('2026-07-30'); // dentro de semana 31, según nóminas reales
+  ok(s31.numero === 31 && s31.anio === 2026, 'Semana 31/2026 calculada correctamente', JSON.stringify(s31));
+  ok(s31.fechaIni === '2026-07-29' && s31.fechaFin === '2026-08-04', 'Con las fechas correctas (no las de la semana 1)', JSON.stringify(s31));
+
+  const s32 = semanaGanaderaDe('2026-08-05');
+  ok(
+    s32.numero === 32 && s32.fechaIni === '2026-08-05' && s32.fechaFin === '2026-08-11',
+    'Semana 32/2026 (miércoles exacto) calculada correctamente',
+    JSON.stringify(s32),
+  );
+
+  // Semana 1 = la que contiene el 1° de enero, aunque empiece en diciembre del año anterior.
+  const s1 = semanaGanaderaDe('2026-01-01');
+  ok(s1.anio === 2026 && s1.numero === 1, 'Semana 1/2026 contiene el 1° de enero', JSON.stringify(s1));
+
+  const todas2026 = semanasGanaderasDelAnio(2026);
+  ok(todas2026.length === 52 || todas2026.length === 53, 'El año tiene 52 o 53 semanas', String(todas2026.length));
+  const numerosUnicos = new Set(todas2026.map((s) => s.numero));
+  ok(numerosUnicos.size === todas2026.length, 'Sin números de semana repetidos');
+  const fechasUnicas = new Set(todas2026.map((s) => s.fechaIni));
+  ok(fechasUnicas.size === todas2026.length, 'Sin fechas de inicio repetidas (el bug original las repetía todas)');
+  ok(
+    todas2026.every((s, i) => i === 0 || s.fechaIni > todas2026[i - 1]!.fechaIni),
+    'Las semanas quedan en orden estrictamente creciente de fecha',
+  );
+}
 
 // ═══ Tasas BCV y nota de débito ═══
 console.log(`\n${B}Tasas BCV y nota de débito${N}`);

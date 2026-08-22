@@ -187,6 +187,29 @@ a { color: var(--verde-600); }
 .chip-usuario .rol { font-size: 11px; color: #8fb3a3; display: block; }
 .entorno { font-size: 11px; color: #8fb3a3; margin-top: 8px; padding: 0 2px; }
 
+.btn-salir-riel {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: #e8a9a3;
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 4px 0;
+  margin-top: 4px;
+  cursor: pointer;
+}
+.btn-salir-riel:hover { color: #ffb3ac; text-decoration: underline; }
+
+/* Botón de cerrar sesión dentro de "Mi cuenta": solo hace falta en el tramo
+   teléfono, donde el riel (y su propio botón) está oculto por completo. En
+   escritorio/tableta la sesión se cierra desde el riel, no desde el modal.
+   Especificidad ".btn.salir-movil" a propósito: ".btn" define su propio
+   "display: inline-flex" más abajo en el archivo y le ganaría a un simple
+   ".salir-movil" por orden de aparición. */
+.btn.salir-movil { display: none; }
+
 /* Cajón de navegación: solo se activa en el tramo tableta (media query más
    abajo). Fuera de ese rango queda inerte, sin importar el estado de React,
    así que no hace falta ningún listener de resize para cerrarlo al agrandar
@@ -501,6 +524,10 @@ table.tabla tfoot td {
 
   /* En modo tabla el pie lleva los totales; en tarjetas se muestran aparte. */
   .resumen-tarjetas { display: grid; }
+
+  /* Sin hover real en pantallas táctiles: el lápiz de edición queda visible
+     siempre en vez de aparecer solo al pasar el mouse. */
+  .lapiz-editar { opacity: 1; }
 }
 
 /* ── Señales ───────────────────────────────────────────────── */
@@ -753,6 +780,15 @@ table.tabla tfoot td {
 }
 .barra-lote .conteo { font-weight: 650; }
 
+.tasa-editable { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+.lapiz-editar {
+  background: none; border: none; cursor: pointer; font-size: 12px; line-height: 1;
+  padding: 2px; border-radius: var(--radio-s); opacity: 0;
+}
+.tasa-editable:hover .lapiz-editar,
+.lapiz-editar:focus-visible { opacity: 1; }
+.lapiz-editar:hover { background: var(--panel-2); }
+
 .paginacion {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   padding: 11px 16px; border-top: 1px solid var(--borde);
@@ -797,6 +833,7 @@ table.tabla tfoot td {
   .chip-usuario { justify-content: center; padding: 8px 4px; }
   .chip-usuario .perfil, .chip-usuario .rol, .chip-usuario .nombre-usuario { display: none; }
   .entorno { display: none; }
+  .btn-salir-riel { display: none; }
 
   .contenido { padding: 18px 18px 50px; }
 
@@ -834,6 +871,7 @@ table.tabla tfoot td {
     display: block;
   }
   .cajon-nav .entorno { display: block; }
+  .cajon-nav .btn-salir-riel { display: block; padding-left: 11px; }
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -878,6 +916,8 @@ table.tabla tfoot td {
     z-index: 50;
   }
   .marca, .pie-lateral { display: none; }
+  /* Único lugar para cerrar sesión en este tramo: el riel está oculto. */
+  .btn.salir-movil { display: inline-flex; }
 
   .nav {
     display: flex;

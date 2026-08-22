@@ -157,3 +157,73 @@ export function diasEntre(ini: string, fin: string): string[] {
   }
   return salida;
 }
+
+/** Miércoles (UTC) que empieza la semana ganadera que contiene el 1° de enero de `anio`. */
+function inicioSemanaGanaderaDelAnio(anio: number): Date {
+  const enero1 = new Date(Date.UTC(anio, 0, 1));
+  // getUTCDay(): 0=domingo … 3=miércoles … 6=sábado.
+  const diasDesdeMiercoles = (enero1.getUTCDay() - 3 + 7) % 7;
+  const inicio = new Date(enero1);
+  inicio.setUTCDate(enero1.getUTCDate() - diasDesdeMiercoles);
+  return inicio;
+}
+
+export interface SemanaGanadera {
+  anio: number;
+  numero: number;
+  fechaIni: string;
+  fechaFin: string;
+}
+
+/**
+ * Semana ganadera de una fecha: bloques fijos de 7 días, de miércoles a
+ * martes; la semana 1 del año es la que contiene el 1° de enero. Es un
+ * cálculo de calendario puro — no depende de que haya ninguna nómina
+ * cargada que cubra esa fecha.
+ */
+export function semanaGanaderaDe(fechaIso: string): SemanaGanadera {
+  const d = new Date(`${fechaIso}T00:00:00Z`);
+  let anio = d.getUTCFullYear();
+  let inicio = inicioSemanaGanaderaDelAnio(anio);
+  if (d < inicio) {
+    anio -= 1;
+    inicio = inicioSemanaGanaderaDelAnio(anio);
+  } else {
+    const inicioSiguiente = inicioSemanaGanaderaDelAnio(anio + 1);
+    if (d >= inicioSiguiente) {
+      anio += 1;
+      inicio = inicioSiguiente;
+    }
+  }
+  const dias = Math.floor((d.getTime() - inicio.getTime()) / 86_400_000);
+  const numero = Math.floor(dias / 7) + 1;
+  // `inicio` es el arranque de la semana 1 del año — hay que avanzarlo
+  // (numero - 1) semanas para llegar al inicio de la semana real de `d`.
+  const inicioSemana = new Date(inicio);
+  inicioSemana.setUTCDate(inicio.getUTCDate() + (numero - 1) * 7);
+  const fin = new Date(inicioSemana);
+  fin.setUTCDate(inicioSemana.getUTCDate() + 6);
+  return {
+    anio,
+    numero,
+    fechaIni: inicioSemana.toISOString().slice(0, 10),
+    fechaFin: fin.toISOString().slice(0, 10),
+  };
+}
+
+/** Todas las semanas ganaderas del año, en orden (52 o 53 según el año). */
+export function semanasGanaderasDelAnio(anio: number): SemanaGanadera[] {
+  const salida: SemanaGanadera[] = [];
+  let inicio = inicioSemanaGanaderaDelAnio(anio);
+  let numero = 1;
+  while (true) {
+    const semana = semanaGanaderaDe(inicio.toISOString().slice(0, 10));
+    if (semana.anio !== anio) break;
+    salida.push(semana);
+    inicio = new Date(inicio);
+    inicio.setUTCDate(inicio.getUTCDate() + 7);
+    numero += 1;
+    if (numero > 54) break; // cota de seguridad
+  }
+  return salida;
+}

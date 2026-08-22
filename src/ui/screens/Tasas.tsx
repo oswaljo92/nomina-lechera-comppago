@@ -2,8 +2,14 @@ import { useState } from 'react';
 import { useApp } from '../estado.tsx';
 import { Aviso, Confirmar, Dato, Modal, Pastilla, Tarjeta, Vacio } from '../components/comunes.tsx';
 import * as repo from '../../core/db/repo.ts';
-import type { NominaResumen } from '../../core/db/repo.ts';
-import { diasEntre, fechaAMostrar, formatearDecimal, nombreDia } from '../../core/parser/numeros.ts';
+import {
+  diasEntre,
+  fechaAMostrar,
+  formatearDecimal,
+  nombreDia,
+  semanaGanaderaDe,
+  semanasGanaderasDelAnio,
+} from '../../core/parser/numeros.ts';
 import {
   construirLibroTasas,
   leerLibroTasas,
@@ -11,27 +17,22 @@ import {
   type LecturaLibroTasas,
 } from '../../core/db/tasasExcel.ts';
 
-function semanaDe(fecha: string, semanas: NominaResumen[]): NominaResumen | undefined {
-  return semanas.find((s) => fecha >= s.fechaIni && fecha <= s.fechaFin);
-}
-
 function esJueves(fecha: string): boolean {
   return new Date(`${fecha}T00:00:00Z`).getUTCDay() === 4;
 }
 
 function construirFilas(
   tasas: { fecha: string; tasa: number }[],
-  semanas: NominaResumen[],
   mapa: Map<string, number>,
 ): FilaTasaExcel[] {
   return tasas.map((t) => {
-    const semana = semanaDe(t.fecha, semanas);
-    const tasaMiercoles = semana ? mapa.get(semana.fechaIni) : undefined;
-    const difCambio = semana && tasaMiercoles !== undefined ? t.tasa - tasaMiercoles : null;
+    const semana = semanaGanaderaDe(t.fecha);
+    const tasaMiercoles = mapa.get(semana.fechaIni);
+    const difCambio = tasaMiercoles !== undefined ? t.tasa - tasaMiercoles : null;
     return {
       fecha: t.fecha,
       dia: nombreDia(t.fecha),
-      semanaGanadera: semana ? String(semana.numero) : '',
+      semanaGanadera: String(semana.numero),
       tasa: t.tasa,
       difCambio,
       esJueves: esJueves(t.fecha),
@@ -56,7 +57,7 @@ export function Tasas() {
   const nominas = repo.listarNominas(db);
   const semanas = [...new Map(nominas.map((n) => [`${n.anio}-${n.numero}`, n])).values()];
   const editable = puedo('cargar-tasas');
-  const filas = construirFilas(tasas, semanas, mapa);
+  const filas = construirFilas(tasas, mapa);
 
   const [fecha, setFecha] = useState(new Date().toISOString().slice(0, 10));
   const [valor, setValor] = useState('');
@@ -70,6 +71,8 @@ export function Tasas() {
   const [pagina, setPagina] = useState(0);
   const [porPagina, setPorPagina] = useState(20);
   const [confirmarEliminar, setConfirmarEliminar] = useState<string[] | null>(null);
+  const [editandoFecha, setEditandoFecha] = useState<string | null>(null);
+  const [anioCalendario, setAnioCalendario] = useState(() => new Date().getUTCFullYear());
 
   const claveSemana =
     semanaElegida && semanas.some((s) => `${s.anio}-${s.numero}` === semanaElegida)
@@ -141,6 +144,10 @@ export function Tasas() {
     // Secuencial por la misma razón que guardarMasivo: la bitácora no
     // tolera inserciones concurrentes.
     for (const f of importacion.filas) {
+      // Si ya existe con el mismo valor no hace falta reescribirla: evita
+      // una entrada de bitácora y una escritura por cada fila que en
+      // realidad no cambió nada.
+      if (mapa.get(f.fecha) === f.tasa) continue;
       await repo.guardarTasa(db, usuario, f.fecha, f.tasa);
     }
     cambiado();
@@ -227,6 +234,42 @@ export function Tasas() {
             reemplazará.
           </p>
         )}
+      </Tarjeta>
+
+      {/* Calendario de semanas ganaderas del año: de calendario puro, no
+          depende de que haya ninguna nómina cargada. */}
+      <Tarjeta
+        titulo="Calendario de semanas ganaderas"
+        descripcion="Miércoles a martes; la semana 1 es la que contiene el 1° de enero. Sirve de referencia aunque todavía no haya nómina cargada para esa semana."
+        acciones={
+          <select
+            value={anioCalendario}
+            onChange={(e) => setAnioCalendario(Number(e.target.value))}
+          >
+            {[...new Set([anioCalendario, new Date().getUTCFullYear(), ...anios.map(Number)])]
+              .sort((a, b) => b - a)
+              .map((a) => (
+                <option key={a} value={a}>
+                  {a}
+                </option>
+              ))}
+          </select>
+        }
+      >
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {semanasGanaderasDelAnio(anioCalendario).map((s) => (
+            <div
+              key={`${s.anio}-${s.numero}`}
+              className="dato"
+              style={{ minWidth: 116, padding: '7px 9px' }}
+            >
+              <div className="etiqueta">Semana {s.numero}</div>
+              <div className="valor pequeno">
+                {fechaAMostrar(s.fechaIni).slice(0, 5)} al {fechaAMostrar(s.fechaFin).slice(0, 5)}
+              </div>
+            </div>
+          ))}
+        </div>
       </Tarjeta>
 
       {/* Estado de cobertura de la semana ganadera elegida */}
@@ -441,21 +484,44 @@ export function Tasas() {
                           <td className="principal">{fechaAMostrar(f.fecha)}</td>
                           <td>{f.dia}</td>
                           <td>{f.semanaGanadera || '—'}</td>
-                          <td className="num" data-etiqueta="Tasa BCV">
-                            <input
-                              key={`${f.fecha}:${f.tasa}`}
-                              type="text"
-                              className="numero"
-                              defaultValue={formatearDecimal(f.tasa, 4)}
-                              disabled={!editable}
-                              style={{ padding: '2px 5px', fontSize: 12, width: 90 }}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') guardar(f.fecha, e.currentTarget.value);
-                              }}
-                              onBlur={(e) => {
-                                if (e.currentTarget.value.trim()) guardar(f.fecha, e.currentTarget.value);
-                              }}
-                            />
+                          <td className="num tasa-editable" data-etiqueta="Tasa BCV">
+                            {editandoFecha === f.fecha ? (
+                              <input
+                                key={`${f.fecha}:${f.tasa}`}
+                                type="text"
+                                className="numero"
+                                autoFocus
+                                defaultValue={formatearDecimal(f.tasa, 4)}
+                                disabled={!editable}
+                                style={{ padding: '2px 5px', fontSize: 12, width: 90 }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    guardar(f.fecha, e.currentTarget.value);
+                                    setEditandoFecha(null);
+                                  }
+                                  if (e.key === 'Escape') setEditandoFecha(null);
+                                }}
+                                onBlur={(e) => {
+                                  if (e.currentTarget.value.trim()) guardar(f.fecha, e.currentTarget.value);
+                                  setEditandoFecha(null);
+                                }}
+                              />
+                            ) : (
+                              <>
+                                <span>{formatearDecimal(f.tasa, 4)}</span>
+                                {editable && (
+                                  <button
+                                    type="button"
+                                    className="lapiz-editar"
+                                    title="Editar esta tasa"
+                                    aria-label="Editar esta tasa"
+                                    onClick={() => setEditandoFecha(f.fecha)}
+                                  >
+                                    ✏️
+                                  </button>
+                                )}
+                              </>
+                            )}
                           </td>
                           <td
                             className="num"
@@ -551,7 +617,10 @@ function ModalImportarTasas({
   alImportar: () => void;
 }) {
   const nuevas = importacion.filas.filter((f) => !existentes.has(f.fecha));
-  const reemplazan = importacion.filas.filter((f) => existentes.has(f.fecha));
+  const iguales = importacion.filas.filter((f) => existentes.get(f.fecha) === f.tasa);
+  const reemplazan = importacion.filas.filter(
+    (f) => existentes.has(f.fecha) && existentes.get(f.fecha) !== f.tasa,
+  );
 
   return (
     <Modal
@@ -593,6 +662,7 @@ function ModalImportarTasas({
           <div className="rejilla cuatro" style={{ marginBottom: 14 }}>
             <Dato etiqueta="Fechas nuevas" valor={String(nuevas.length)} />
             <Dato etiqueta="Reemplazan una tasa" valor={String(reemplazan.length)} />
+            <Dato etiqueta="Ya iguales" valor={String(iguales.length)} />
           </div>
           <div className="tabla-envoltura tabla-adaptable" style={{ maxHeight: 280, overflowY: 'auto' }}>
             <table className="tabla">
@@ -609,10 +679,12 @@ function ModalImportarTasas({
                     <td className="principal">{fechaAMostrar(f.fecha)}</td>
                     <td className="num">{formatearDecimal(f.tasa, 4)}</td>
                     <td>
-                      {existentes.has(f.fecha) ? (
-                        <Pastilla tono="aviso">Reemplaza</Pastilla>
-                      ) : (
+                      {!existentes.has(f.fecha) ? (
                         <Pastilla tono="ok">Nueva</Pastilla>
+                      ) : existentes.get(f.fecha) === f.tasa ? (
+                        <Pastilla tono="neutra">Igual, no se reemplaza</Pastilla>
+                      ) : (
+                        <Pastilla tono="aviso">Reemplaza</Pastilla>
                       )}
                     </td>
                   </tr>

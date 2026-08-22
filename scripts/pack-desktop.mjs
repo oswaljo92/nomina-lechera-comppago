@@ -52,7 +52,14 @@ function listar(dir, base = '') {
   for (const entrada of fs.readdirSync(dir, { withFileTypes: true })) {
     const completo = path.join(dir, entrada.name);
     const relativo = base ? `${base}/${entrada.name}` : entrada.name;
-    if (entrada.isDirectory()) salida.push(...listar(completo, relativo));
+    // No usar entrada.isDirectory()/isSymbolicLink(): dentro de una carpeta
+    // sincronizada por OneDrive, algunas carpetas normales (p. ej.
+    // resources/app.asar.unpacked) quedan marcadas como "reparse point" y
+    // Dirent las reporta como symlink aunque no lo sean, rompiendo
+    // readFileSync con EISDIR. statSync sigue el enlace de verdad y evita
+    // el problema.
+    const st = fs.statSync(completo);
+    if (st.isDirectory()) salida.push(...listar(completo, relativo));
     else salida.push({ ruta: completo, nombre: `${nombreExe}/${relativo}` });
   }
   return salida;

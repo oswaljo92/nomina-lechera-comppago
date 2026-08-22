@@ -3,13 +3,14 @@ import JSZip from 'jszip';
 import {
   ANCHO_PT,
   dibujarComprobante,
+  dibujarNotaDebito,
   type Hoja,
   type Medidor,
   type OpcionesDibujo,
   type Peso,
   type Primitiva,
 } from '../../core/receipt/dibujo.ts';
-import { nombreComprobante, nombreUnico } from '../../core/receipt/nombreArchivo.ts';
+import { nombreComprobante, nombreNotaDebito, nombreUnico } from '../../core/receipt/nombreArchivo.ts';
 import type { DatosComprobante } from '../../core/receipt/comprobante.ts';
 
 export type Formato = 'pdf' | 'png';
@@ -273,25 +274,30 @@ export interface OpcionesGeneracion {
   alAvanzar?: (hechos: number, total: number, nombre: string) => void;
 }
 
-export async function generarComprobantes(
+type Dibujador = (datos: DatosComprobante, opciones: OpcionesDibujo, medir: Medidor) => Hoja;
+type Nombrador = (
+  nombreProveedor: string,
+  numeroNomina: number,
+  codigoProveedor: string,
+  extension: Formato,
+) => string;
+
+async function generarDocumentos(
   items: ItemAGenerar[],
   { formato, opciones, alAvanzar }: OpcionesGeneracion,
+  dibujar: Dibujador,
+  nombrar: Nombrador,
 ): Promise<ArchivoGenerado[]> {
   const medir = crearMedidor();
   const usados = new Set<string>();
   const salida: ArchivoGenerado[] = [];
 
   for (const [i, item] of items.entries()) {
-    const hoja = dibujarComprobante(item.datos, opciones, medir);
+    const hoja = dibujar(item.datos, opciones, medir);
     const blob = formato === 'png' ? await aPng(hoja) : aPdf(hoja);
 
     const nombre = nombreUnico(
-      nombreComprobante(
-        item.datos.proveedor.nombre,
-        item.numeroNomina,
-        item.datos.proveedor.codigo,
-        formato,
-      ),
+      nombrar(item.datos.proveedor.nombre, item.numeroNomina, item.datos.proveedor.codigo, formato),
       usados,
     );
 
@@ -304,6 +310,21 @@ export async function generarComprobantes(
   }
 
   return salida;
+}
+
+export async function generarComprobantes(
+  items: ItemAGenerar[],
+  opcionesGen: OpcionesGeneracion,
+): Promise<ArchivoGenerado[]> {
+  return generarDocumentos(items, opcionesGen, dibujarComprobante, nombreComprobante);
+}
+
+/** Nota de débito como documento independiente (ver `dibujarNotaDebito`). */
+export async function generarNotasDebito(
+  items: ItemAGenerar[],
+  opcionesGen: OpcionesGeneracion,
+): Promise<ArchivoGenerado[]> {
+  return generarDocumentos(items, opcionesGen, dibujarNotaDebito, nombreNotaDebito);
 }
 
 export async function empaquetarZip(archivos: ArchivoGenerado[]): Promise<Blob> {
