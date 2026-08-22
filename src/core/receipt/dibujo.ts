@@ -271,18 +271,11 @@ function dibujarBloqueIdentificacion(
   }
   l.texto(
     `Nómina Nº ${datos.numero}  ·  Año ${datos.anio}  ·  del ${fechaAMostrar(datos.fechaIni)} al ${fechaAMostrar(datos.fechaFin)}`,
-    izq,
+    (izq + der) / 2,
     y,
-    { tam: 9, color: COLORES.tenue },
+    { tam: 9, color: COLORES.tenue, alineacion: 'centro' },
   );
   y += 11;
-  l.texto(
-    `${datos.tipo === 'leche' ? 'Pago de Leche Fresca' : 'Nómina de Rutas (transporte)'}  ·  Fábrica ${datos.fabricaCod} ${datos.fabricaNom}`,
-    izq,
-    y,
-    { tam: 9, color: COLORES.tenue },
-  );
-  y += 10;
   l.linea(izq, y, der);
   y += 18;
 
@@ -301,17 +294,17 @@ function dibujarBloqueIdentificacion(
       const { leche, transporte } = datos.notaDebitoCombinada;
       if (leche?.aplica) {
         lineasFecha.push(
-          `Leche · Factura ${fechaAMostrar(leche.fechaFactura)}   ·   Nota de débito ${fechaAMostrar(leche.fechaNota)}`,
+          `Leche · Fecha de Factura ${fechaAMostrar(leche.fechaFactura)}   ·   Fecha de Nota de débito ${fechaAMostrar(leche.fechaNota)}`,
         );
       }
       if (transporte?.aplica) {
         lineasFecha.push(
-          `Flete · Factura ${fechaAMostrar(transporte.fechaFactura)}   ·   Nota de débito ${fechaAMostrar(transporte.fechaNota)}`,
+          `Flete · Fecha de Factura ${fechaAMostrar(transporte.fechaFactura)}   ·   Fecha de Nota de débito ${fechaAMostrar(transporte.fechaNota)}`,
         );
       }
     } else if (datos.notaDebito?.aplica) {
       lineasFecha.push(
-        `Factura ${fechaAMostrar(datos.notaDebito.fechaFactura)}   ·   Nota de débito ${fechaAMostrar(datos.notaDebito.fechaNota)}`,
+        `Fecha de Factura ${fechaAMostrar(datos.notaDebito.fechaFactura)}   ·   Fecha de Nota de débito ${fechaAMostrar(datos.notaDebito.fechaNota)}`,
       );
     }
     for (const linea of lineasFecha) {
@@ -375,7 +368,7 @@ function datosDetalleNd(datos: DatosComprobante): {
 
 /** Alto que ocupa `dibujarDetalleNd` para el caso en que la ND sí aplica. */
 function altoDetalleNd(dosLineasNd: boolean, filasTablaLength: number): number {
-  return (dosLineasNd ? 18 : 0) + (filasTablaLength > 0 ? 12 + filasTablaLength * 9 + 6 : 0);
+  return (dosLineasNd ? 18 : 0) + (filasTablaLength > 0 ? 16 + filasTablaLength * 9 + 6 : 0);
 }
 
 /**
@@ -399,9 +392,9 @@ function dibujarDetalleNd(l: Lienzo, datos: DatosComprobante, izq: number, y0: n
   if (filasTabla.length > 0) {
     const cols = [izq + 12, izq + 60, izq + 130, izq + 210, izq + 290];
     ['SERV', 'LITROS', 'PRECIO $/L', 'TASA INICIO', 'TASA FINAL'].forEach((h, i) =>
-      l.texto(h, cols[i]!, y + 4, { tam: 6.5, peso: 'bold', color: COLORES.suave }),
+      l.texto(h, cols[i]!, y + 9, { tam: 6.5, peso: 'bold', color: COLORES.suave }),
     );
-    y += 12;
+    y += 16;
     filasTabla.forEach(({ serv, r }) => {
       l.texto(serv, cols[0]!, y, { tam: 7.5, color: COLORES.tenue });
       l.texto(formatearEntero(r.litrosBase), cols[1]!, y, { tam: 7.5, color: COLORES.tenue });
@@ -672,7 +665,7 @@ export function dibujarNotaDebito(
     der,
     y,
     { ...opciones, mostrarNotaDebito: true },
-    'NOTA DE DÉBITO',
+    'COMPROBANTE NOTA DE DEBITO',
   );
 
   const nd = datos.notaDebito;

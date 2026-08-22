@@ -7,25 +7,32 @@ Nómina Lechera CompPago: lee los reportes GAN0584 (leche) y GAN0594
 hasta ahora: arranque/restauración de datos, navegación en tableta, tasas del
 BCV por Excel, el gran rediseño del comprobante (unión leche+flete), carga en
 lote, un rediseño completo de Tasas BCV (borrado, paginación, buscador, año),
-y la última tanda: nota de débito desglosada por leche/flete, conceptos
-manuales que ahora pueden afectar el neto/total a facturar, y versión
-automática de la app.
+conceptos manuales financieros y nota de débito desglosada, "Cerrar sesión"
+en el riel, semana ganadera calculada por calendario (sin depender de
+nóminas cargadas), la Nota de Débito como documento independiente
+descargable, y la última tanda: corrección visual de la celda "Tasa BCV",
+botón de "Cerrar sesión" con apariencia real de botón, y varios ajustes de
+texto/alineación en la Nota de Débito (y el comprobante de pago, que
+comparte el mismo bloque de dibujo).
 
 ## 2. Estado actual
 
 Todo está implementado, tipado sin errores (`npm run check`), pasa
 `test:core`/`test:parser`, se probó a mano en el navegador (incluido el flujo
-completo de vínculo leche+flete con los PDF reales de `entradas/`), está
-commiteado y pusheado a `origin/master`, y compilado en
-`release/win-unpacked/CompPago.exe`.
+completo de vínculo leche+flete con los PDF reales de `entradas/`, la
+descarga real de una Nota de Débito verificada leyendo el PDF generado, y la
+descarga de un comprobante de pago normal para confirmar que comparte los
+mismos cambios), está commiteado y pusheado a `origin/master`, y compilado
+en `release/CompPago-1.2.0-windows.zip` (`npm run electron:build` completo).
 
-**Versión actual: `1.1.0`** (antes fija en `1.0.0` desde el commit inicial;
-ver sección 3 sobre el mecanismo nuevo). Últimos commits:
+**Versión actual: `1.2.0`** (subida en esta tanda, ver sección 3).
+
+Últimos commits:
 
 ```
+(este commit) Corrige alineación de Tasa BCV, botón de cerrar sesión y ajustes de Nota de Débito; sube a 1.2.0
+486eed7 Cerrar sesión en el riel, semanas ganaderas por calendario, y Nota de Débito independiente
 cb31545 Comprobante: ND desglosada, conceptos manuales financieros y versión automática
-e0fb5c4 Cargar en lote, perfil en el menú hamburguesa y rediseño de Tasas BCV
-f5bb1b8 Rediseño del comprobante: Bs/L, columna Transf., zoom y unión leche+flete
 ```
 
 Pendiente de decisión del usuario, no de código:
@@ -57,16 +64,16 @@ Ya resuelto (no repetir):
   `versionArchivo < VERSION_ESQUEMA` (ver nota sobre migraciones abajo).
 - `src/ui/screens/Ajustes.tsx` — tarjeta "Zona de peligro" (vaciar la base).
 
-**Navegación en tableta (primera versión)**
-- `src/ui/App.tsx` — `NavPrincipal` extraído; menú hamburguesa + cajón
-  lateral en el tramo 640–1023px.
-- `src/ui/estilos.css` — reglas de ese tramo.
-
-**Tasas del BCV (primera versión: carga manual)**
-- `src/core/parser/numeros.ts` — `nombreDia()`.
-- `src/core/db/tasasExcel.ts` — construir/leer el libro de Excel.
-- `src/ui/screens/Tasas.tsx` — selector de semana ganadera, edición masiva,
-  import/export a Excel.
+**Navegación en tableta / carga en lote / Tasas BCV (primer rediseño)**
+- `src/ui/App.tsx` — `NavPrincipal`/`PerfilPie` extraídos; menú hamburguesa +
+  cajón lateral en el tramo 640–1023px.
+- `src/ui/screens/Cargar.tsx` — botón "Guardar todas las listas (N)"; las
+  nóminas bloqueadas (duplicado, conceptos sin clasificar) se quedan
+  visibles en su tarjeta sin perderse mientras no se cambie de pantalla.
+- `src/ui/screens/Tasas.tsx` — primer rediseño: eliminar individual/lote con
+  confirmación, paginación real, buscador, filtro de año, columna "Semana
+  ganadera" solo con el número, aviso si "Dif. Cambio" del Excel viene vacía.
+- `src/ui/components/MiCuenta.tsx` — alineación de campos de contraseña.
 
 **Comprobante (rediseño grande): Bs/L, Transf., unión leche+flete**
 - `src/core/receipt/dibujo.ts` — precio en Bs/L, insignia y secciones del
@@ -84,117 +91,184 @@ Ya resuelto (no repetir):
 - `src/ui/screens/Comprobantes.tsx` — detección de candidatos, `unidadDe()`.
 - `src/ui/screens/Ajustes.tsx` — sección "Vínculos leche-transporte".
 
+**Comprobante: ND desglosada por leche/flete, conceptos manuales financieros, versión automática**
+- `src/core/receipt/dibujo.ts` — cajas "TOTAL A FACTURAR"/"NETO A PAGAR"
+  intercambiadas (orden y color); debajo de "NOTA DE DÉBITO" aparece el
+  desglose Leche/Flete y una tabla SERV/LITROS/PRECIO $/L/TASA INICIO/TASA
+  FINAL; se quitó el texto "Información de referencia...".
+- `src/core/calc/calcular.ts` — ND redondeada hacia arriba (`Math.ceil`).
+- `src/core/types.ts` + `src/core/db/esquema.ts`/`basedatos.ts` —
+  `ConceptoManual.efecto: 'suma'|'resta'|null`; columna `efecto` agregada de
+  forma **aditiva** (`ALTER TABLE`, sin subir `VERSION_ESQUEMA`).
+- `src/core/calc/calcular.ts` — `calcularRegistro` suma/resta los manuales
+  con `efecto` al neto y al total a facturar (nunca al bruto/deducciones).
+- `src/core/db/repo.ts` — `agregarConceptoManual` con `efecto`; nueva
+  `editarConceptoManual`.
+- `src/ui/components/ModalConceptoManual.tsx` — elegir del catálogo o crear
+  nuevo, checkbox de afectar totales, lista "Ya agregados" con
+  Editar/Eliminar, litros como "N L sin pagar".
+- `vite.config.ts` + `src/vite-env.d.ts` — `__APP_VERSION__` inyectada desde
+  `package.json` en build time; se muestra en "Mi cuenta".
+
+**Nota clave de arquitectura** (para no repetir la confusión): las columnas
+Neto/Total a facturar de la **tabla** de `Comprobantes.tsx` son valores
+**guardados** en `registros` (calculados una sola vez al cargar la nómina,
+con `manuales: []`, ver `repo.ts:300`) — los conceptos manuales **no** las
+actualizan ahí. Donde sí se recalculan en vivo es en `comprobante.ts`/
+`comprobanteCombinado.ts` (lo que arma el PDF real). Para ver el efecto de un
+concepto manual hay que mirar la vista previa/PDF, no la tabla de la lista.
+
+### Sesión anterior
+
+**"Cerrar sesión" al riel lateral** (`src/ui/App.tsx`, `src/ui/components/MiCuenta.tsx`, `src/ui/estilos.css`)
+- `PerfilPie` (en `App.tsx`) gana un botón "Cerrar sesión" propio, entre el
+  chip de perfil y la línea "Escritorio · Electron...". Se quitó del pie del
+  modal "Mi cuenta" en escritorio/tableta.
+- **Excepción teléfono**: en `<640px` el riel completo está oculto
+  (`.marca, .pie-lateral { display: none; }`), así que el botón se mantiene
+  en el modal *solo* ahí, mostrado con la clase `.salir-movil`.
+- **Bug encontrado y corregido durante la prueba**: la regla
+  `.salir-movil { display: none; }` no aplicaba porque `.btn` (definida más
+  abajo en `estilos.css`) también fija `display` y le ganaba por orden de
+  aparición, pese a tener la misma especificidad. Se resolvió subiendo la
+  especificidad a `.btn.salir-movil` en ambas reglas (ocultar en desktop,
+  mostrar en el tramo teléfono).
+
+**Tasas BCV: semana ganadera por calendario, import más inteligente, edición con lápiz**
+- `src/core/parser/numeros.ts` — nuevas `semanaGanaderaDe(fecha)` y
+  `semanasGanaderasDelAnio(anio)`: calculan la semana ganadera (miércoles a
+  martes, semana 1 = la que contiene el 1° de enero) por **calendario
+  puro**, confirmado con el usuario como la regla real. Ya no depende de que
+  haya una nómina cargada que cubra esa fecha.
+- **Bug real encontrado y corregido durante la prueba**: la primera versión
+  de `semanaGanaderaDe` calculaba bien el `numero` de semana, pero
+  `fechaIni`/`fechaFin` siempre devolvían las fechas de la **semana 1** del
+  año, sin importar qué semana fuera (nunca avanzaba el punto de partida).
+  Se notó porque la nueva tarjeta de calendario mostraba las mismas fechas
+  "31/12 al 06/01" en las 52 semanas. Corregido avanzando el inicio
+  `(numero - 1) * 7` días; se agregaron pruebas de regresión en
+  `scripts/test-core.ts` (sección "Semana ganadera por calendario").
+  Verificado que las fechas calculadas coinciden exactamente con las
+  nóminas reales (semana 31: 29/07–04/08, semana 32: 05/08–11/08).
+- `src/ui/screens/Tasas.tsx` — nueva tarjeta "Calendario de semanas
+  ganaderas" (selector de año + lista de las ~52 semanas, de solo lectura);
+  la columna "Semana ganadera" de la tabla principal ya siempre muestra un
+  número, no depende de nóminas.
+- Al importar Excel: si una fecha ya existe con la **misma** tasa, se
+  muestra "Igual, no se reemplaza" y no se reescribe (antes siempre
+  sobreescribía, generando una entrada de bitácora innecesaria incluso sin
+  cambios reales). `ModalImportarTasas` ahora distingue Nueva/Reemplaza/Igual.
+- La celda "Tasa BCV" pasó de ser un `<input>` siempre visible a texto de
+  solo lectura con un lápiz (✏️) que aparece al pasar el mouse — clic para
+  editar en el momento (Enter/blur guarda y vuelve a modo texto). En modo
+  tarjeta (móvil, sin hover real) el lápiz queda siempre visible.
+
+**Nota de Débito como documento independiente**
+- `src/core/receipt/dibujo.ts` — se extrajeron tres bloques reutilizables de
+  `dibujarComprobante`: `dibujarEncabezadoEmpresa`, `dibujarBloqueIdentificacion`
+  (título parametrizable) y `dibujarDetalleNd` (desglose Leche/Flete + tabla
+  SERV/LITROS/PRECIO/TASA). Nueva función exportada `dibujarNotaDebito(datos,
+  opciones, medir)`: mismo encabezado de empresa/proveedor que el
+  comprobante completo, pero el cuerpo se reduce a una caja
+  "DIFERENCIA DE PRECIO SEMANA {numero}" + el desglose de la ND — sin
+  litros, conceptos, Bruto, Neto a pagar ni Total a facturar.
+- `src/core/receipt/nombreArchivo.ts` — nueva `nombreNotaDebito(...)` (igual
+  que `nombreComprobante` con sufijo `_ND`).
+- `src/ui/salida/generar.ts` — `generarDocumentos` interno generalizado
+  (recibe qué función de dibujo/nombre usar); `generarComprobantes` y la
+  nueva `generarNotasDebito` son ahora dos wrappers delgados sobre lo mismo.
+- `src/ui/screens/Comprobantes.tsx` — botón "ND" por fila (solo si
+  `nd?.aplica`, individual/combinado vía `unidadDe`) y botón de lote
+  "⬇ ZIP notas de débito" en la barra-lote (omite en silencio los
+  proveedores sin ND calculable y avisa cuántos se omitieron).
+- **Verificado de punta a punta**: se descargó el PDF real (interceptando el
+  `<a download>` que genera `plataforma.archivos.guardar` en modo web) y se
+  leyó con la herramienta de lectura de PDF — contenido correcto, incluido
+  el caso combinado leche+flete.
+
+**Empaquetado de escritorio**
+- `scripts/pack-desktop.mjs` — **bug real encontrado y corregido**: el
+  proyecto vive dentro de una carpeta sincronizada por OneDrive
+  (`C:\Users\usuario\OneDrive\...`), que usa "reparse points" en algunas
+  carpetas (p. ej. `release\win-unpacked\resources\app.asar.unpacked`).
+  `fs.readdirSync(..., {withFileTypes:true})` reportaba esa carpeta como
+  symlink (`Dirent.isSymbolicLink() === true`) en vez de carpeta normal, y
+  el script intentaba `readFileSync` sobre ella → `EISDIR`, con lo que el
+  ZIP y la hoja para sistemas no se regeneraban (aunque el `.exe` sí se
+  compilaba bien). Corregido usando `fs.statSync` (que sigue el enlace de
+  verdad) en vez de los flags de `Dirent`. Confirmado con
+  `npm run electron:build` completo y `node scripts/pack-desktop.mjs` solo.
+
+**Limpieza incidental (no relacionada con lo pedido, encontrada de paso)**
+- `src/core/receipt/nombreArchivo.ts`, función `sanearNombre` — el regex que
+  quita caracteres de control (`.replace(/[\x00-\x1f\x7f]/g, '')`) tenía,
+  desde **antes de esta sesión**, bytes de control crudos escritos
+  literalmente dentro del archivo fuente (incluido un byte nulo real) en vez
+  de la forma escapada `\x00-\x1f\x7f`. Funcionaba igual en runtime, pero
+  `git diff` mostraba el archivo como binario. Se reemplazó por la forma de
+  texto escapada, sin cambiar el comportamiento — verificado con
+  `npm run check`/`test:core` y confirmando `0` bytes nulos en el archivo.
+
 ### Esta sesión
 
-**Cargar nómina: guardado en lote** (`src/ui/screens/Cargar.tsx`)
-- Botón "Guardar todas las listas (N)" cuando hay 2+ nóminas sin errores
-  listas para guardar. Guarda secuencialmente (`guardarUno` extraído de
-  `guardar`). Las que quedan bloqueadas (duplicado, conceptos sin
-  clasificar) se quedan visibles en su propia tarjeta con su botón
-  individual — no se pierden, no hace falta volver a soltar el archivo
-  mientras no se cambie de pantalla (no hay persistencia en base de datos
-  de "pendientes", es solo el estado de React de esa pantalla).
+**Tasa BCV: corregido el desfase de la línea en modo lectura**
+(`src/ui/screens/Tasas.tsx`)
+- Causa raíz: la clase `.tasa-editable` (`display: flex`) estaba puesta
+  directamente sobre el `<td>` de la celda "Tasa BCV". Un `<td>` con
+  `display: flex` deja de comportarse como celda de tabla normal y su altura
+  ya no se sincroniza con el resto de la fila, lo que producía el borde
+  descuadrado frente a la columna "Dif. Cambio" vecina.
+- Fix: el `<td>` vuelve a ser una celda normal (`className="num"` a secas);
+  `tasa-editable` se movió a un `<span>` interno que envuelve solo el texto +
+  el botón lápiz en modo lectura. El modo edición (el `<input>`) no necesita
+  el wrapper — ya se alinea a la derecha por `text-align: right` de
+  `table.tabla td.num` y de `.numero`.
+- Verificado en el navegador: la celda mide exactamente lo mismo (42.4px,
+  mismo `bottom`) que "Dif. Cambio" en la misma fila.
 
-**Mi cuenta y navegación (`src/ui/components/MiCuenta.tsx`, `src/ui/App.tsx`, `src/ui/estilos.css`)**
-- Alineados los campos "Contraseña nueva"/"Repítela" (el desajuste era por
-  `align-items: flex-end` en `.linea` combinado con que solo uno de los dos
-  campos tenía texto de ayuda; se movió el texto de ayuda fuera de la fila).
-- El cajón hamburguesa (tramo tableta 640–1023px) ahora muestra el bloque de
-  perfil completo al fondo (antes solo mostraba los enlaces de navegación) —
-  se extrajo `PerfilPie` y se usa tanto en el riel de escritorio como en el
-  cajón, con overrides de CSS para que no se reduzca a solo ícono ahí dentro.
-- **Esta sesión, segunda tanda:** "Cerrar sesión" se movió del pie del modal
-  a debajo del bloque de perfil; debajo de eso ahora aparece
-  "Creado por Oswaldo Hernández · versión X.Y.Z".
+**Botón "Cerrar sesión" del riel con apariencia real de botón**
+(`src/ui/estilos.css`)
+- `.btn-salir-riel` (usado por `PerfilPie` en `App.tsx`) era un `<button>`
+  sin ningún estilo de botón (sin fondo ni borde, subrayado al hover — se
+  veía como un enlace de texto). Se rediseñó como caja bordeada
+  (`inline-flex`, `padding: 7px 13px`, `border-radius: var(--radio-s)`,
+  borde y fondo translúcidos en el tono rojizo que ya tenía), siguiendo el
+  mismo lenguaje visual que `.chip-usuario`/`.nav button` (los otros
+  controles del riel oscuro), en vez de la paleta clara de `.btn`.
+- Se ajustó el override dentro del cajón de navegación
+  (`.cajon-nav .btn-salir-riel`) para que mantenga `display: inline-flex` en
+  vez de `display: block` con padding manual, y no reintroduzca el look de
+  enlace plano ahí.
 
-**Tasas BCV: rediseño completo** (`src/ui/screens/Tasas.tsx`, `src/core/db/tasasExcel.ts`, `src/ui/estilos.css`)
-- Eliminar tasas individual o en lote, con confirmación (`<Confirmar>`, antes
-  no existía ninguna confirmación).
-- Paginación real (números de página + elipsis + selector 10/20/50/100) en
-  vez del scroll interno que tenía la tabla.
-- Buscador (mismo patrón que Comprobantes) y selector de año (por defecto
-  "Todos los años").
-- Columna "Semana ganadera" muestra solo el número (antes "Nº 32 · 2026").
-- Al importar un Excel, si la columna "Dif. Cambio" del archivo viene
-  vacía, se muestra un aviso explicando que se calcula sola (esa columna
-  nunca se ha importado, solo se mostraba/exportaba).
-
-**Comprobante: nota de débito desglosada** (`src/core/receipt/dibujo.ts`, `src/core/calc/calcular.ts`)
-- Se intercambió el orden/colores de las dos cajas: ahora "TOTAL A
-  FACTURAR" va primero con el fondo verde oscuro, y "NETO A PAGAR" segundo
-  con el verde claro (antes era al revés).
-- La nota de débito se redondea hacia arriba (`Math.ceil`, antes
-  `Math.round`) — único punto de cálculo (`calcularNotaDebito`), cubre
-  también cada lado de un comprobante combinado.
-- Debajo de "NOTA DE DÉBITO [total]" ahora aparece, cuando el proveedor está
-  vinculado (leche+flete): dos líneas chicas "Leche: X Bs" / "Flete: Y Bs" (el
-  desglose del monto), y debajo una tabla con columnas SERV, LITROS,
-  PRECIO $/L, TASA INICIO, TASA FINAL — reemplaza el texto de fórmula que
-  había antes. Precio ya en dólares por litro (antes se mostraba convertido a
-  Bs/L).
-
-**Conceptos manuales, ahora con efecto financiero opcional**
-- `src/core/types.ts` — `ConceptoManual.efecto: 'suma' | 'resta' | null`
-  (`null` = informativo, el comportamiento de siempre).
-- `src/core/db/esquema.ts` + `src/core/db/basedatos.ts` — columna nueva
-  `efecto` en `conceptos_manual`. **Importante:** esta migración es aditiva
-  (`ALTER TABLE ... ADD COLUMN`, guardado por un `PRAGMA table_info` check
-  dentro de `migrar()`) y **no** subió `VERSION_ESQUEMA` — ese número solo
-  debe subir para cambios que rompen compatibilidad, porque
-  `BaseAnterior.tsx` fuerza a respaldar y borrar toda la base cuando
-  `versionArchivo < VERSION_ESQUEMA`. Si en el futuro hace falta otra
-  columna/tabla aditiva, seguir el mismo patrón (no tocar
-  `VERSION_ESQUEMA`).
-- `src/core/calc/calcular.ts` — `calcularRegistro` ahora suma/resta
-  `centimos` de los manuales con `efecto` al **neto** y al **total a
-  facturar** (nunca al bruto ni a las deducciones, que siguen reflejando
-  solo lo impreso en el PDF, para no romper el cuadre contra el PDF de
-  `Cargar.tsx`).
-- `src/core/db/repo.ts` — `agregarConceptoManual` ahora recibe `efecto`;
-  nueva función `editarConceptoManual` (antes solo existía alta y borrado,
-  y el borrado ni siquiera estaba conectado a la UI).
-- `src/ui/components/ModalConceptoManual.tsx` — rediseño: elegir un
-  concepto ya existente del catálogo (con sugerencia automática de
-  suma/resta según su `clase`/`restaFacturacion` — p. ej. los códigos 0090
-  "Faltante" y 0092 "Agua Transporte" sugieren "resta") o crear uno nuevo;
-  checkbox "Afecta el Neto a pagar y el Total a facturar" con radio
-  Suma/Resta; lista "Ya agregados" con Editar/Eliminar cuando el modal se
-  abre para un solo proveedor; el campo Litros ahora se anuncia como
-  "N L sin pagar" en el comprobante. Se quitó el aviso fijo "Es
-  informativo" (ya no siempre es cierto).
-- `src/core/receipt/dibujo.ts` — se quitó el texto
-  "Información de referencia. No afecta..."; los montos con `efecto`
-  llevan un prefijo `+`/`-`.
-- `src/ui/screens/Comprobantes.tsx` — pasa `catalogo` y `existentes` al
-  modal, conecta `alEditar`/`alEliminar`.
-
-**Nota clave de arquitectura** (para no repetir la confusión de esta
-sesión): las columnas Neto/Total a facturar que se ven en la **tabla** de
-`Comprobantes.tsx` son valores **guardados** en `registros` (calculados una
-sola vez al cargar la nómina, con `manuales: []` — ver `repo.ts:300`). Los
-conceptos manuales **no** actualizan esas columnas de la tabla. Donde sí se
-recalculan en vivo con los manuales reales es en `comprobante.ts` y
-`comprobanteCombinado.ts` (`calcularRegistro(..., manuales, ...)`), que es lo
-que arma el PDF/imagen real. Si se necesita ver el efecto de un concepto
-manual, hay que mirar la vista previa/PDF, no la tabla de la lista.
-
-**Versión automática de la app**
-- `vite.config.ts` — lee `package.json` en build time y expone
-  `__APP_VERSION__` vía `define`.
-- `src/vite-env.d.ts` (nuevo) — `declare const __APP_VERSION__: string;`.
-- `package.json` — `version` subido de `1.0.0` a `1.1.0`.
-- **Convención a seguir de ahora en adelante** (no hay automatización real,
-  es un criterio a aplicar en cada tanda de cambios antes de commitear):
-  `patch` = corrección de errores sin funcionalidad nueva; `minor` =
-  funcionalidad nueva o cambios de UI que no rompen datos existentes; `major`
-  = cambios que rompen compatibilidad de datos (equivalente a subir
-  `VERSION_ESQUEMA`) o rediseños grandes de flujo. El número sale de
-  `package.json`, así que una vez editado el próximo build ya lo muestra
-  solo.
-
-**Empaquetado**
-- `npm run electron:build` genera `release/win-unpacked/CompPago.exe` y
-  `release/CompPago-1.1.0-windows.zip`. Se corrió al final de esta sesión.
+**Nota de Débito (y comprobante de pago, que comparte el mismo dibujo): 4 ajustes de texto/alineación**
+(`src/core/receipt/dibujo.ts`)
+- Todo vive en la función compartida `dibujarBloqueIdentificacion` (usada
+  tanto por `dibujarComprobante` como por `dibujarNotaDebito`) y en
+  `dibujarDetalleNd`, así que los cambios aplican **a la vez** a ambos
+  documentos.
+- Título del documento de ND: `'NOTA DE DÉBITO'` → `'COMPROBANTE NOTA DE
+  DEBITO'` (solo en la llamada desde `dibujarNotaDebito`; el rótulo "NOTA DE
+  DÉBITO" que aparece como línea de totales dentro del comprobante completo
+  no se tocó, es un rótulo distinto).
+- Se quitó la línea "Pago de Leche Fresca/Nómina de Rutas · Fábrica ...";
+  la línea de arriba ("Nómina Nº … · Año … · del … al …") pasó de alineada
+  a la izquierda a centrada (`alineacion: 'centro'`, `x = (izq+der)/2`).
+- Las fechas pasaron de "Factura {fecha} · Nota de débito {fecha}" a "Fecha
+  de Factura {fecha} · Fecha de Nota de débito {fecha}" (en los tres casos:
+  leche, flete y simple), manteniendo los prefijos "Leche ·"/"Flete ·" en el
+  caso combinado.
+- **Bug real encontrado durante la verificación visual**: dentro de la caja
+  "DIFERENCIA DE PRECIO SEMANA N", el encabezado de la tabla ("SERV LITROS
+  PRECIO $/L TASA INICIO TASA FINAL") se dibujaba a solo 4pt del borde
+  inferior de la barra verde del título — casi tocándola. Corregido en
+  `dibujarDetalleNd`/`altoDetalleNd`: el encabezado ahora se dibuja a 9pt de
+  distancia (antes 4pt) y su alto reservado subió de 12 a 16pt (para que
+  `altoCaja`, calculado en `dibujarNotaDebito`/`dibujarComprobante`, siga
+  incluyendo exactamente el espacio real dibujado).
+- **Verificado de punta a punta dos veces**: se descargó el PDF real de la
+  ND (antes y después del ajuste de espaciado) y del comprobante de pago
+  normal para el mismo proveedor, interceptando la descarga y leyendo el PDF
+  generado — los 4 ajustes se ven correctos en ambos documentos.
 
 ## 4. Intentos fallidos / notas técnicas
 
@@ -211,14 +285,38 @@ manual, hay que mirar la vista previa/PDF, no la tabla de la lista.
   asigne un `DataTransfer` propio y dispare `change` en vez de abrir el
   diálogo del sistema operativo. Útil para probar importaciones de Excel
   por script.
-- Para inspeccionar una imagen grande generada en el navegador de pruebas
-  (p. ej. la vista previa del comprobante, que es un `<img>` con `blob:`
-  URL): hay que reducirla con un `<canvas>` a un ancho razonable (~700px)
-  antes de pedir el `toDataURL()`, porque el string base64 completo excede
-  el límite de tokens de una sola respuesta de `javascript_tool`. Si aun
-  así excede el límite, la herramienta guarda el resultado en un archivo
-  `.txt` (formato JSON `[{type,text}]`) — usar Node/Bash para extraer la
-  parte base64 y decodificarla a un `.png` real antes de leerla con `Read`.
+- Para inspeccionar una imagen o PDF grande generado en el navegador de
+  pruebas (p. ej. la vista previa del comprobante, o una descarga real):
+  interceptar `Node.prototype.appendChild` para capturar el `href` (`blob:`)
+  del `<a download>` que crea `plataforma.archivos.guardar`; luego
+  `fetch(href)` + `arrayBuffer()` + `btoa()` para obtener el base64. Si el
+  string excede el límite de una respuesta de `javascript_tool`, la
+  herramienta lo guarda en un `.txt` (JSON `[{type,text}]`) — usar Node para
+  extraer el base64 y decodificarlo a un archivo real (`.png` o `.pdf`). La
+  herramienta `Read` lee PDFs directamente, no hace falta convertir a imagen.
+- Para reducir una imagen grande antes de codificarla: dibujarla en un
+  `<canvas>` a un ancho razonable (~700px) antes de `toDataURL()`.
+- **Cuidado al relayar un base64 grande (>4-5k caracteres) de vuelta al
+  navegador de pruebas a mano.** Un PDF de ND se decodificó una vez con
+  "incorrect data check" (zlib) pese a que el largo en bytes coincidía —
+  la causa fue una duplicación accidental de un tramo al copiar el string
+  por partes, no un problema del navegador ni del código. Si un PDF
+  "descargado" sale con formas/rectángulos rotos o texto faltante al
+  leerlo, sospechar primero de la transcripción del base64 (verificar
+  longitud exacta de cada tramo con Node antes de concatenar) antes de
+  tocar el código de dibujo.
+- **`onBlur` de React no se dispara con un evento sintético.** Despachar
+  `input.dispatchEvent(new Event('blur', {bubbles:true}))` por script NO
+  activa el `onBlur` de React (que se implementa sobre `focusout` con su
+  propio sistema de delegación) — hay que llamar `input.blur()` de verdad
+  sobre el elemento que tiene el foco (comprobar con
+  `document.activeElement === input`).
+- **Si `git diff` muestra un archivo de texto como "Binary files differ"**,
+  buscar un byte nulo embebido (`Buffer` con `indexOf(0) !== -1`) — puede
+  ser un carácter de control crudo escrito sin querer dentro de un literal
+  de regex (`/[<bytes crudos>]/`) en vez de su forma escapada
+  (`\x00`/`\u0000`). El `Read` tool lo puede mostrar como si fueran espacios
+  invisibles sin dar ninguna pista.
 - `exceljs` no tiene `Buffer` de Node disponible en el build principal — se
   resolvió con `as any` en `workbook.xlsx.load()`, comentado.
 - **Migraciones de esquema**: `VERSION_ESQUEMA` (en `esquema.ts`) es
@@ -228,23 +326,32 @@ manual, hay que mirar la vista previa/PDF, no la tabla de la lista.
   `basedatos.ts`: `PRAGMA table_info(tabla)` para ver si la columna ya
   existe, y si no, `ALTER TABLE ... ADD COLUMN` dentro de `migrar()`, sin
   tocar `VERSION_ESQUEMA`.
+- **El proyecto vive dentro de una carpeta sincronizada por OneDrive.** Esto
+  puede hacer que Node reporte mal ciertas carpetas (reparse points) como
+  symlinks vía `Dirent.isSymbolicLink()`/`isDirectory()`. Si un script que
+  recorre archivos falla con `EISDIR` o `EINVAL: invalid argument, readlink`,
+  usar `fs.statSync(ruta)` (que resuelve el enlace de verdad) en vez de los
+  flags de `Dirent` de `readdirSync(..., {withFileTypes:true})`.
 - El servidor de pruebas del navegador necesita `.claude/launch.json` en la
   carpeta raíz (`C:\Users\usuario\OneDrive\OSWALDO\LACTALIS\.claude\launch.json`,
   no dentro de `nomina-lechera-comppago\.claude\`) apuntando a
   `npm --prefix nomina-lechera-comppago run dev`, puerto 5173 — ya está
   creado, no hace falta rehacerlo.
 - El navegador de pruebas usa almacenamiento OPFS persistente por origen: la
-  sesión de usuario ("Oswaldo") y los datos cargados (incluidas las 4
-  nóminas de `entradas/` y varias tasas de prueba de 2024-2026) sobreviven
-  entre reinicios del servidor de dev dentro de la misma sesión de trabajo.
-  No es la base de datos real de Electron, es aparte.
+  sesión de usuario y los datos cargados sobreviven entre reinicios del
+  servidor de dev dentro de la misma sesión de trabajo, pero **no**
+  sobreviven a un `location.reload()` completo del login (hay que volver a
+  iniciar sesión, aunque los datos previamente guardados siguen ahí). No es
+  la base de datos real de Electron, es aparte.
 
 ## 5. Próximos pasos
 
 1. Cargar los datos de empresa por fábrica en Ajustes para que los
-   comprobantes reales no muestren "Sin empresa" (único pendiente real).
+   comprobantes reales no muestren "Sin empresa" (único pendiente real de
+   negocio).
 2. Si se agregan más PDF de referencia, van en `entradas/` (ya no existe
    `ejemplos/`).
-3. Al hacer la próxima tanda de cambios, recordar subir `package.json`
-   (`npm version patch|minor|major` o edición manual) según el criterio de
-   la sección 3, antes de compilar/commitear.
+3. Al hacer la próxima tanda de cambios, recordar correr
+   `npm run electron:build` completo (no solo `pack-desktop.mjs` suelto) si
+   se quiere entregar una versión nueva, y subir `package.json` según el
+   criterio de la sección 3 antes de compilar/commitear.

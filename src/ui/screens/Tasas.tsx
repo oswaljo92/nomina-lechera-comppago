@@ -484,7 +484,7 @@ export function Tasas() {
                           <td className="principal">{fechaAMostrar(f.fecha)}</td>
                           <td>{f.dia}</td>
                           <td>{f.semanaGanadera || '—'}</td>
-                          <td className="num tasa-editable" data-etiqueta="Tasa BCV">
+                          <td className="num" data-etiqueta="Tasa BCV">
                             {editandoFecha === f.fecha ? (
                               <input
                                 key={`${f.fecha}:${f.tasa}`}
@@ -507,7 +507,7 @@ export function Tasas() {
                                 }}
                               />
                             ) : (
-                              <>
+                              <span className="tasa-editable">
                                 <span>{formatearDecimal(f.tasa, 4)}</span>
                                 {editable && (
                                   <button
@@ -520,7 +520,7 @@ export function Tasas() {
                                     ✏️
                                   </button>
                                 )}
-                              </>
+                              </span>
                             )}
                           </td>
                           <td
