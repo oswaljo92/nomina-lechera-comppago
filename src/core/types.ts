@@ -234,6 +234,21 @@ export interface LineaConcepto {
   centimos: number;
   /** Solo se usa en comprobantes combinados, para etiquetar de dónde vino. */
   origen?: 'leche' | 'flete';
+  /** Solo se usa en comprobantes agrupados (mismo tipo), para etiquetar de
+   * qué código vino la línea. Independiente de `origen`. */
+  origenCodigo?: string;
+}
+
+/**
+ * Nota de débito de un comprobante agrupado (2+ códigos del mismo tipo):
+ * cada código calcula la suya de forma independiente y se muestra un único
+ * monto sumado, con el desglose por código disponible aparte.
+ */
+export interface NotaDebitoAgrupada {
+  aplica: boolean;
+  /** Suma de los `centimos` de los códigos con `aplica: true`. */
+  centimos: number;
+  porCodigo: Array<{ codigo: string; resultado: ResultadoNotaDebito | null }>;
 }
 
 export interface RegistroCalculado {

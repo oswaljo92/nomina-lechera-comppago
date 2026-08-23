@@ -911,6 +911,18 @@ export async function confirmarVinculo(
       `Esta ruta ya está vinculada al proveedor de leche ${yaTransporte.codigoLeche}. Desvincúlala primero.`,
     );
   }
+  // Exclusión mutua con la agrupación del mismo tipo: un código participa en
+  // un solo mecanismo de combinación a la vez.
+  if (grupoDeCodigo(db, 'leche', codigoLeche)) {
+    throw new Error(
+      `El código de leche ${codigoLeche} ya está agrupado con otros del mismo tipo. Desagrúpalo primero.`,
+    );
+  }
+  if (grupoDeCodigo(db, 'transporte', codigoTransporte)) {
+    throw new Error(
+      `El código de transporte ${codigoTransporte} ya está agrupado con otros del mismo tipo. Desagrúpalo primero.`,
+    );
+  }
   await guardarVinculo(db, autor, codigoLeche, codigoTransporte, documento, 'confirmado');
 }
 
@@ -940,5 +952,195 @@ export async function desvincularProveedor(
   await registrarBitacora(db, autor, 'desvincular-proveedor', 'vinculo', `${codigoLeche}::${codigoTransporte}`, {
     codigoLeche,
     codigoTransporte,
+  });
+}
+
+// ─────────────────────────────────────────────────────────────
+// Agrupación del mismo tipo (2+ códigos de leche, o 2+ de transporte, que
+// son el mismo proveedor). Mecanismo separado del de vínculos leche-
+// transporte de arriba: un código participa en uno u otro, nunca en ambos
+// (la exclusión mutua se valida en confirmarVinculo/confirmarGrupoMismoTipo).
+// ─────────────────────────────────────────────────────────────
+
+export interface CandidatoGrupoMismoTipo {
+  tipo: TipoNomina;
+  documento: string;
+  registros: RegistroGuardado[];
+}
+
+/**
+ * Candidatos de agrupación dentro de una nómina: registros del mismo tipo
+ * con el mismo documento (RIF/cédula normalizado), excluyendo documentos ya
+ * descartados y grupos donde ya están todos juntos.
+ */
+export function candidatosGrupoMismoTipo(
+  db: BaseDatos,
+  tipo: TipoNomina,
+  anio: number,
+  numero: number,
+): CandidatoGrupoMismoTipo[] {
+  const nomina = buscarNomina(db, tipo, anio, numero);
+  if (!nomina) return [];
+  const registros = registrosDeNomina(db, nomina.id);
+
+  const porDocumento = new Map<string, RegistroGuardado[]>();
+  for (const r of registros) {
+    const dig = digitosDocumento(r.leido.rif) ?? digitosDocumento(r.leido.cedula);
+    if (!dig) continue;
+    const lista = porDocumento.get(dig) ?? [];
+    lista.push(r);
+    porDocumento.set(dig, lista);
+  }
+
+  const descartados = new Set(
+    db
+      .todos<Fila>('SELECT documento FROM grupo_mismo_tipo_descartado WHERE tipo = ?', [tipo])
+      .map((f) => String(f['documento'])),
+  );
+  const gruposDeCodigo = new Map(
+    db
+      .todos<Fila>('SELECT codigo, grupo_id FROM grupo_mismo_tipo WHERE tipo = ?', [tipo])
+      .map((f) => [String(f['codigo']), String(f['grupo_id'])]),
+  );
+
+  const candidatos: CandidatoGrupoMismoTipo[] = [];
+  for (const [documento, lista] of porDocumento) {
+    if (lista.length < 2 || descartados.has(documento)) continue;
+    const grupoIds = new Set(lista.map((r) => gruposDeCodigo.get(r.leido.codigo)).filter(Boolean));
+    // Si todos ya están en el mismo grupo, no hace falta volver a sugerirlo.
+    if (grupoIds.size === 1 && lista.every((r) => gruposDeCodigo.has(r.leido.codigo))) continue;
+    candidatos.push({ tipo, documento, registros: lista });
+  }
+  return candidatos;
+}
+
+export interface GrupoMismoTipo {
+  grupoId: string;
+  tipo: TipoNomina;
+  codigos: string[];
+  principal: string;
+}
+
+function gruposDesdeFilas(filas: Fila[]): GrupoMismoTipo[] {
+  const porGrupo = new Map<string, Fila[]>();
+  for (const f of filas) {
+    const grupoId = String(f['grupo_id']);
+    const lista = porGrupo.get(grupoId) ?? [];
+    lista.push(f);
+    porGrupo.set(grupoId, lista);
+  }
+  return [...porGrupo.entries()].map(([grupoId, lista]) => {
+    const filaPrincipal = lista.find((f) => Number(f['principal']) === 1) ?? lista[0]!;
+    return {
+      grupoId,
+      tipo: String(lista[0]!['tipo']) as TipoNomina,
+      codigos: lista.map((f) => String(f['codigo'])),
+      principal: String(filaPrincipal['codigo']),
+    };
+  });
+}
+
+export function gruposMismoTipo(db: BaseDatos): GrupoMismoTipo[] {
+  return gruposDesdeFilas(db.todos<Fila>('SELECT * FROM grupo_mismo_tipo ORDER BY creado_en DESC'));
+}
+
+/** Si el código pertenece a un grupo, lo devuelve completo (con sus demás
+ * miembros); si no, `null`. */
+export function grupoDeCodigo(db: BaseDatos, tipo: TipoNomina, codigo: string): GrupoMismoTipo | null {
+  const fila = db.uno<Fila>('SELECT grupo_id FROM grupo_mismo_tipo WHERE tipo = ? AND codigo = ?', [
+    tipo,
+    codigo,
+  ]);
+  if (!fila) return null;
+  const filas = db.todos<Fila>('SELECT * FROM grupo_mismo_tipo WHERE grupo_id = ?', [
+    String(fila['grupo_id']),
+  ]);
+  return gruposDesdeFilas(filas)[0] ?? null;
+}
+
+/** Agrupa 2+ códigos del mismo tipo. Si alguno ya pertenece a un grupo, el
+ * resto se fusiona en ese mismo grupo. */
+export async function confirmarGrupoMismoTipo(
+  db: BaseDatos,
+  autor: Autor,
+  tipo: TipoNomina,
+  codigos: string[],
+): Promise<void> {
+  if (codigos.length < 2) throw new Error('Un grupo necesita al menos 2 códigos.');
+
+  for (const codigo of codigos) {
+    const cruzado = vinculoConfirmadoDe(db, tipo, codigo);
+    if (cruzado) {
+      const contraparte = tipo === 'leche' ? cruzado.codigoTransporte : cruzado.codigoLeche;
+      throw new Error(
+        `El código ${codigo} ya está vinculado con ${contraparte} (leche-transporte). Desvincúlalo primero para poder agruparlo con otros del mismo tipo.`,
+      );
+    }
+  }
+
+  const grupoExistente = codigos
+    .map((c) => db.uno<Fila>('SELECT grupo_id FROM grupo_mismo_tipo WHERE codigo = ?', [c]))
+    .find((f): f is Fila => f !== null);
+  const grupoId = grupoExistente ? String(grupoExistente['grupo_id']) : nuevoId('g_');
+
+  const filaPrincipal = db.uno<Fila>(
+    'SELECT codigo FROM grupo_mismo_tipo WHERE grupo_id = ? AND principal = 1',
+    [grupoId],
+  );
+  const principal = filaPrincipal ? String(filaPrincipal['codigo']) : codigos[0]!;
+
+  const ahora = new Date().toISOString();
+  for (const codigo of codigos) {
+    db.correr(
+      `INSERT INTO grupo_mismo_tipo (codigo, tipo, grupo_id, principal, usuario_id, creado_en, actualizado_en)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(codigo) DO UPDATE SET
+         grupo_id = excluded.grupo_id,
+         actualizado_en = excluded.actualizado_en`,
+      [codigo, tipo, grupoId, codigo === principal ? 1 : 0, autor.id, ahora, ahora],
+    );
+  }
+  await registrarBitacora(db, autor, 'confirmar-grupo-mismo-tipo', 'grupo_mismo_tipo', grupoId, {
+    tipo,
+    codigos,
+  });
+}
+
+/** Saca un código de su grupo. Si solo queda un miembro, el grupo se
+ * disuelve por completo (un grupo de 1 no tiene sentido). */
+export async function quitarDeGrupoMismoTipo(db: BaseDatos, autor: Autor, codigo: string): Promise<void> {
+  const fila = db.uno<Fila>('SELECT grupo_id FROM grupo_mismo_tipo WHERE codigo = ?', [codigo]);
+  if (!fila) return;
+  const grupoId = String(fila['grupo_id']);
+  db.correr('DELETE FROM grupo_mismo_tipo WHERE codigo = ?', [codigo]);
+
+  const restantes = db.todos<Fila>('SELECT * FROM grupo_mismo_tipo WHERE grupo_id = ?', [grupoId]);
+  if (restantes.length === 1) {
+    db.correr('DELETE FROM grupo_mismo_tipo WHERE grupo_id = ?', [grupoId]);
+  } else if (restantes.length > 1 && !restantes.some((f) => Number(f['principal']) === 1)) {
+    db.correr('UPDATE grupo_mismo_tipo SET principal = 1 WHERE codigo = ?', [
+      String(restantes[0]!['codigo']),
+    ]);
+  }
+
+  await registrarBitacora(db, autor, 'quitar-de-grupo-mismo-tipo', 'grupo_mismo_tipo', grupoId, { codigo });
+}
+
+/** Descarta un candidato de agrupación para que no se vuelva a sugerir. */
+export async function descartarCandidatoGrupoMismoTipo(
+  db: BaseDatos,
+  autor: Autor,
+  tipo: TipoNomina,
+  documento: string,
+): Promise<void> {
+  db.correr(
+    `INSERT INTO grupo_mismo_tipo_descartado (tipo, documento, usuario_id, creado_en)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(tipo, documento) DO NOTHING`,
+    [tipo, documento, autor.id, new Date().toISOString()],
+  );
+  await registrarBitacora(db, autor, 'descartar-grupo-mismo-tipo', 'grupo_mismo_tipo', `${tipo}::${documento}`, {
+    tipo,
+    documento,
   });
 }

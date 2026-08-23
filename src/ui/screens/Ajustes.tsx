@@ -843,6 +843,7 @@ function SeccionDatos() {
   void version;
   const nominas = repo.listarNominas(db);
   const vinculos = repo.vinculosProveedor(db);
+  const grupos = repo.gruposMismoTipo(db);
   const [elegidas, setElegidas] = useState<Set<string>>(new Set(nominas.map((n) => n.id)));
   const [informe, setInforme] = useState<{ paquete: Paquete; informe: Informe } | null>(null);
   const [mensaje, setMensaje] = useState<{ nivel: 'ok' | 'error'; texto: string } | null>(null);
@@ -1072,6 +1073,62 @@ function SeccionDatos() {
                         >
                           {v.estado === 'confirmado' ? 'Desvincular' : 'Reconsiderar'}
                         </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Tarjeta>
+      )}
+
+      {puedo('vincular-proveedor') && (
+        <Tarjeta
+          titulo="Agrupar códigos del mismo tipo"
+          descripcion="Dos o más códigos de leche (o dos o más de transporte) que son el mismo proveedor. Se suman en un solo comprobante, con el desglose por código, sin volver a preguntar. Mecanismo separado de los vínculos leche-transporte de arriba: un código participa en uno u otro, nunca en los dos."
+        >
+          {grupos.length === 0 ? (
+            <Vacio icono="🔗" titulo="No hay grupos todavía">
+              Se sugieren solos en Comprobantes cuando el mismo RIF/cédula aparece en 2 o más
+              códigos del mismo tipo dentro de la misma nómina.
+            </Vacio>
+          ) : (
+            <div className="tabla-envoltura tabla-adaptable">
+              <table className="tabla">
+                <thead>
+                  <tr>
+                    <th>Tipo</th>
+                    <th>Códigos agrupados</th>
+                    <th style={{ textAlign: 'right' }} />
+                  </tr>
+                </thead>
+                <tbody>
+                  {grupos.map((g) => (
+                    <tr key={g.grupoId}>
+                      <td className="principal">{g.tipo === 'leche' ? 'Leche' : 'Transporte'}</td>
+                      <td>
+                        {g.codigos.map((c) => (
+                          <Pastilla key={c} tono={c === g.principal ? 'ok' : 'neutra'}>
+                            {c}
+                            {c === g.principal ? ' (principal)' : ''}
+                          </Pastilla>
+                        ))}
+                      </td>
+                      <td className="acciones-celda">
+                        {g.codigos.map((c) => (
+                          <button
+                            key={c}
+                            className="btn sutil chico"
+                            title={`Desagrupar ${c}`}
+                            onClick={() => {
+                              if (!usuario) return;
+                              void repo.quitarDeGrupoMismoTipo(db, usuario, c).then(() => cambiado());
+                            }}
+                          >
+                            ✕ {c}
+                          </button>
+                        ))}
                       </td>
                     </tr>
                   ))}

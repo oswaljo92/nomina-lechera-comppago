@@ -5,6 +5,7 @@ import type {
   Empresa,
   LineaConcepto,
   LitrosDia,
+  NotaDebitoAgrupada,
   NotaDebitoCombinada,
   ParametrosNotaDebito,
   RegistroLeido,
@@ -48,6 +49,13 @@ export interface DatosComprobante {
   combinado?: {
     leche: { codigo: string; ruta: string; fabricaCod: string; fabricaNom: string };
     transporte: { codigo: string; ruta: string; fabricaCod: string; fabricaNom: string };
+  };
+  /** Solo presente en un comprobante agrupado (2+ códigos del mismo tipo).
+   * Mutuamente excluyente con `combinado`. */
+  notaDebitoAgrupada?: NotaDebitoAgrupada;
+  agrupado?: {
+    tipo: TipoNomina;
+    miembros: Array<{ codigo: string; ruta: string; fabricaCod: string; fabricaNom: string }>;
   };
 }
 

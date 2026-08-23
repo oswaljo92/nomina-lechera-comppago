@@ -86,12 +86,17 @@ export interface OpcionesDibujo {
   mostrarLitrosDia: boolean;
   mostrarBanco: boolean;
   mostrarNotaDebito: boolean;
+  /** Si es true, la factura no dibuja la caja/tabla de ND (queda solo como
+   * documento aparte vía `dibujarNotaDebito`); las fechas de referencia en
+   * el bloque de identificación se mantienen igual. */
+  separarNd: boolean;
 }
 
 export const OPCIONES_DIBUJO: OpcionesDibujo = {
   mostrarLitrosDia: false,
   mostrarBanco: false,
   mostrarNotaDebito: true,
+  separarNd: false,
 };
 
 class Lienzo {
@@ -348,13 +353,29 @@ function dibujarBloqueIdentificacion(
   return y;
 }
 
-/** Filas de la tabla de cálculo de ND (Leche/Flete si combinado, una si no). */
+/** Filas de la tabla de cálculo de ND (por Leche/Flete si combinado, por
+ * código si agrupado, una sola si es individual). */
 function datosDetalleNd(datos: DatosComprobante): {
-  dosLineasNd: boolean;
+  desglose: { etiqueta: string; centimos: number }[];
   filasTabla: { serv: string; r: NotaDebitoCalculada }[];
 } {
   const nd = datos.notaDebito;
   const ndComb = datos.notaDebitoCombinada;
+  const ndAgr = datos.notaDebitoAgrupada;
+
+  if (ndAgr) {
+    const aplicables = ndAgr.porCodigo.filter(
+      (p): p is { codigo: string; resultado: NotaDebitoCalculada } => Boolean(p.resultado?.aplica),
+    );
+    return {
+      desglose:
+        aplicables.length > 1
+          ? aplicables.map((p) => ({ etiqueta: p.codigo, centimos: p.resultado.centimos }))
+          : [],
+      filasTabla: aplicables.map((p) => ({ serv: p.codigo, r: p.resultado })),
+    };
+  }
+
   const dosLineasNd = Boolean(ndComb?.aplica && ndComb.leche?.aplica && ndComb.transporte?.aplica);
   const filasTabla: { serv: string; r: NotaDebitoCalculada }[] = [];
   if (ndComb) {
@@ -363,31 +384,40 @@ function datosDetalleNd(datos: DatosComprobante): {
   } else if (nd?.aplica) {
     filasTabla.push({ serv: datos.tipo === 'leche' ? 'Leche' : 'Flete', r: nd });
   }
-  return { dosLineasNd, filasTabla };
+  return {
+    desglose: dosLineasNd
+      ? [
+          { etiqueta: 'Leche', centimos: filasTabla.find((f) => f.serv === 'Leche')!.r.centimos },
+          { etiqueta: 'Flete', centimos: filasTabla.find((f) => f.serv === 'Flete')!.r.centimos },
+        ]
+      : [],
+    filasTabla,
+  };
 }
 
 /** Alto que ocupa `dibujarDetalleNd` para el caso en que la ND sí aplica. */
-function altoDetalleNd(dosLineasNd: boolean, filasTablaLength: number): number {
-  return (dosLineasNd ? 18 : 0) + (filasTablaLength > 0 ? 16 + filasTablaLength * 9 + 6 : 0);
+function altoDetalleNd(desgloseLength: number, filasTablaLength: number): number {
+  return desgloseLength * 9 + (filasTablaLength > 0 ? 16 + filasTablaLength * 9 + 6 : 0);
 }
 
 /**
- * Desglose Leche/Flete del monto de ND (cuando ambos aplican) + tabla con
- * los datos del cálculo (SERV, LITROS, PRECIO $/L, TASA INICIO, TASA
- * FINAL), sin mostrar la multiplicación. Reusado por el comprobante
- * completo y por la nota de débito independiente.
+ * Desglose por Leche/Flete (combinado) o por código (agrupado) del monto de
+ * ND, cuando hay más de una fuente aplicando, + tabla con los datos del
+ * cálculo (SERV, LITROS, PRECIO $/L, TASA INICIO, TASA FINAL), sin mostrar
+ * la multiplicación. Reusado por el comprobante completo y por la nota de
+ * débito independiente.
  */
 function dibujarDetalleNd(l: Lienzo, datos: DatosComprobante, izq: number, y0: number): number {
   let y = y0;
-  const { dosLineasNd, filasTabla } = datosDetalleNd(datos);
+  const { desglose, filasTabla } = datosDetalleNd(datos);
 
-  if (dosLineasNd) {
-    const centimosLeche = filasTabla.find((f) => f.serv === 'Leche')!.r.centimos;
-    const centimosFlete = filasTabla.find((f) => f.serv === 'Flete')!.r.centimos;
-    l.texto(`Leche: ${formatearBs(centimosLeche)} Bs`, izq + 12, y + 4, { tam: 7.5, color: COLORES.tenue });
-    l.texto(`Flete: ${formatearBs(centimosFlete)} Bs`, izq + 12, y + 13, { tam: 7.5, color: COLORES.tenue });
-    y += 18;
-  }
+  desglose.forEach((d, i) => {
+    l.texto(`${d.etiqueta}: ${formatearBs(d.centimos)} Bs`, izq + 12, y + 4 + i * 9, {
+      tam: 7.5,
+      color: COLORES.tenue,
+    });
+  });
+  y += desglose.length * 9;
 
   if (filasTabla.length > 0) {
     const cols = [izq + 12, izq + 60, izq + 130, izq + 210, izq + 290];
@@ -466,20 +496,28 @@ export function dibujarComprobante(
   l.texto('CONCEPTOS', izq, y, { tam: 6.5, peso: 'bold', color: COLORES.suave });
   y += 14;
 
-  // Divisor sutil entre lo que viene de leche y lo que viene de flete, solo
-  // en comprobantes combinados — para que quede claro de dónde salió cada
-  // línea sin inventar un segundo "CONCEPTOS".
-  let origenPrevio: 'leche' | 'flete' | undefined;
-  function marcaOrigen(origen: 'leche' | 'flete' | undefined): void {
-    if (!origen || origen === origenPrevio) return;
-    origenPrevio = origen;
-    l.rect({ x: izq, y: y - 8, ancho: 3, alto: 10, relleno: origen === 'leche' ? COLORES.verde : COLORES.suave });
-    l.texto(origen === 'leche' ? 'LECHE' : 'FLETE', izq + 8, y, { tam: 6.5, peso: 'bold', color: COLORES.tenue });
+  // Divisor sutil entre lo que viene de cada lado: leche/flete si es
+  // combinado, o el código si es agrupado (mismo tipo) — para que quede
+  // claro de dónde salió cada línea sin inventar un segundo "CONCEPTOS".
+  let origenPrevio: string | undefined;
+  function marcaOrigen(linea: { origen?: 'leche' | 'flete'; origenCodigo?: string }): void {
+    const clave = linea.origen ?? linea.origenCodigo;
+    if (!clave || clave === origenPrevio) return;
+    origenPrevio = clave;
+    const etiqueta = linea.origen ? (linea.origen === 'leche' ? 'LECHE' : 'FLETE') : `CÓDIGO ${linea.origenCodigo}`;
+    l.rect({
+      x: izq,
+      y: y - 8,
+      ancho: 3,
+      alto: 10,
+      relleno: linea.origen === 'flete' ? COLORES.suave : COLORES.verde,
+    });
+    l.texto(etiqueta, izq + 8, y, { tam: 6.5, peso: 'bold', color: COLORES.tenue });
     y += 12;
   }
 
   for (const linea of datos.pagos) {
-    marcaOrigen(linea.origen);
+    marcaOrigen(linea);
     l.texto(linea.codigo, xCodigo, y, { tam: 8, color: COLORES.tenue });
     l.texto(l.recortar(linea.nombre, xMonto - xNombre - 110, 9.5), xNombre, y, { tam: 9.5 });
     l.texto(formatearBs(linea.centimos), xMonto, y, { tam: 9.5, alineacion: 'der' });
@@ -495,7 +533,7 @@ export function dibujarComprobante(
   if (datos.deducciones.length > 0) {
     origenPrevio = undefined;
     for (const linea of datos.deducciones) {
-      marcaOrigen(linea.origen);
+      marcaOrigen(linea);
       l.texto(linea.codigo, xCodigo, y, { tam: 8, color: COLORES.tenue });
       l.texto(l.recortar(linea.nombre, xMonto - xNombre - 110, 9.5), xNombre, y, {
         tam: 9.5,
@@ -519,16 +557,20 @@ export function dibujarComprobante(
   y += 6;
   const nd = datos.notaDebito;
   const ndComb = datos.notaDebitoCombinada;
-  const mostrarNd = opciones.mostrarNotaDebito && (nd !== null || ndComb !== undefined);
-  const { dosLineasNd, filasTabla } = datosDetalleNd(datos);
+  const ndAgr = datos.notaDebitoAgrupada;
+  const mostrarNd =
+    opciones.mostrarNotaDebito &&
+    !opciones.separarNd &&
+    (nd !== null || ndComb !== undefined || ndAgr !== undefined);
+  const { desglose, filasTabla } = datosDetalleNd(datos);
 
   // Si ningún lado aplica, `filasTabla` queda vacío (ver arriba) — hace
   // falta un alto fijo aparte para los motivos en rojo de esa rama.
-  const aplicaNd = ndComb ? ndComb.aplica : Boolean(nd?.aplica);
+  const aplicaNd = ndAgr ? ndAgr.aplica : ndComb ? ndComb.aplica : Boolean(nd?.aplica);
 
   const filasTotales = 2 + (mostrarNd ? 1 : 0);
   const altoFila = 26;
-  const altoDetalle = !mostrarNd ? 0 : aplicaNd ? altoDetalleNd(dosLineasNd, filasTabla.length) : 16;
+  const altoDetalle = !mostrarNd ? 0 : aplicaNd ? altoDetalleNd(desglose.length, filasTabla.length) : 16;
   const altoCaja = filasTotales * altoFila + altoDetalle;
 
   l.rect({
@@ -566,7 +608,7 @@ export function dibujarComprobante(
   if (mostrarNd) {
     l.linea(izq, y, der, COLORES.linea, 0.6);
     if (aplicaNd) {
-      const centimosNd = ndComb ? ndComb.centimos : (nd as { centimos: number }).centimos;
+      const centimosNd = ndAgr ? ndAgr.centimos : ndComb ? ndComb.centimos : (nd as { centimos: number }).centimos;
       l.texto('NOTA DE DÉBITO', izq + 12, y + 17, { tam: 9.5, peso: 'bold' });
       l.texto(`${formatearBs(centimosNd)} Bs`, der - 12, y + 18, {
         tam: 13,
@@ -578,7 +620,11 @@ export function dibujarComprobante(
     } else {
       l.rect({ x: izq + 1, y, ancho: ANCHO_UTIL - 2, alto: altoFila + altoDetalle, relleno: COLORES.errorFondo });
       l.texto('NOTA DE DÉBITO', izq + 12, y + 16, { tam: 9.5, peso: 'bold', color: COLORES.error });
-      const motivos: string[] = ndComb
+      const motivos: string[] = ndAgr
+        ? ndAgr.porCodigo
+            .filter((p) => p.resultado && !p.resultado.aplica)
+            .map((p) => `${p.codigo}: ${(p.resultado as { motivo: string }).motivo}`)
+        : ndComb
         ? [
             ndComb.leche && !ndComb.leche.aplica ? `Leche: ${ndComb.leche.motivo}` : null,
             ndComb.transporte && !ndComb.transporte.aplica ? `Flete: ${ndComb.transporte.motivo}` : null,
@@ -670,14 +716,15 @@ export function dibujarNotaDebito(
 
   const nd = datos.notaDebito;
   const ndComb = datos.notaDebitoCombinada;
-  const aplica = ndComb ? ndComb.aplica : Boolean(nd?.aplica);
+  const ndAgr = datos.notaDebitoAgrupada;
+  const aplica = ndAgr ? ndAgr.aplica : ndComb ? ndComb.aplica : Boolean(nd?.aplica);
 
   y += 6;
   if (aplica) {
-    const centimosNd = ndComb ? ndComb.centimos : (nd as { centimos: number }).centimos;
-    const { dosLineasNd, filasTabla } = datosDetalleNd(datos);
+    const centimosNd = ndAgr ? ndAgr.centimos : ndComb ? ndComb.centimos : (nd as { centimos: number }).centimos;
+    const { desglose, filasTabla } = datosDetalleNd(datos);
     const altoFila = 26;
-    const altoCaja = altoFila + altoDetalleNd(dosLineasNd, filasTabla.length);
+    const altoCaja = altoFila + altoDetalleNd(desglose.length, filasTabla.length);
 
     l.rect({ x: izq, y, ancho: ANCHO_UTIL, alto: altoCaja, borde: COLORES.verde, grosor: 1.4, radio: 5 });
     l.rect({ x: izq + 1, y: y + 1, ancho: ANCHO_UTIL - 2, alto: altoFila - 1, relleno: COLORES.verde });
@@ -711,7 +758,12 @@ export function dibujarNotaDebito(
       peso: 'bold',
       color: COLORES.error,
     });
-    const motivo = ndComb
+    const motivo = ndAgr
+      ? (ndAgr.porCodigo.find((p) => p.resultado && !p.resultado.aplica)?.resultado as
+          | { motivo: string }
+          | undefined
+        )?.motivo ?? ''
+      : ndComb
       ? ([
           ndComb.leche && !ndComb.leche.aplica ? ndComb.leche.motivo : null,
           ndComb.transporte && !ndComb.transporte.aplica ? ndComb.transporte.motivo : null,

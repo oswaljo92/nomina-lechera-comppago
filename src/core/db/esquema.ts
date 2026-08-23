@@ -198,6 +198,32 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_vinculo_leche_confirmado
 CREATE UNIQUE INDEX IF NOT EXISTS idx_vinculo_transporte_confirmado
   ON vinculos_proveedor(codigo_transporte) WHERE estado = 'confirmado';
 
+-- Agrupa 2+ códigos del MISMO tipo (dos rutas de transporte, o dos códigos
+-- de leche) que son en realidad el mismo proveedor. Mecanismo separado e
+-- independiente de vinculos_proveedor (que es cruzado leche<->transporte);
+-- un código no puede estar en los dos mecanismos a la vez (ver guardas en
+-- confirmarVinculo/confirmarGrupoMismoTipo).
+CREATE TABLE IF NOT EXISTS grupo_mismo_tipo (
+  codigo         TEXT PRIMARY KEY,
+  tipo           TEXT NOT NULL CHECK (tipo IN ('leche','transporte')),
+  grupo_id       TEXT NOT NULL,
+  principal      INTEGER NOT NULL DEFAULT 0,
+  usuario_id     TEXT NOT NULL,
+  creado_en      TEXT NOT NULL,
+  actualizado_en TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_grupo_mismo_tipo_grupo ON grupo_mismo_tipo(grupo_id);
+
+-- Documentos (RIF/cédula) descartados explícitamente como candidato de
+-- agrupación del mismo tipo, para no volver a sugerirlos cada semana.
+CREATE TABLE IF NOT EXISTS grupo_mismo_tipo_descartado (
+  tipo       TEXT NOT NULL,
+  documento  TEXT NOT NULL,
+  usuario_id TEXT NOT NULL,
+  creado_en  TEXT NOT NULL,
+  PRIMARY KEY (tipo, documento)
+);
+
 CREATE TABLE IF NOT EXISTS descargas (
   id          TEXT PRIMARY KEY,
   registro_id TEXT NOT NULL REFERENCES registros(id) ON DELETE CASCADE,

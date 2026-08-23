@@ -10,29 +10,33 @@ lote, un rediseño completo de Tasas BCV (borrado, paginación, buscador, año),
 conceptos manuales financieros y nota de débito desglosada, "Cerrar sesión"
 en el riel, semana ganadera calculada por calendario (sin depender de
 nóminas cargadas), la Nota de Débito como documento independiente
-descargable, y la última tanda: corrección visual de la celda "Tasa BCV",
-botón de "Cerrar sesión" con apariencia real de botón, y varios ajustes de
-texto/alineación en la Nota de Débito (y el comprobante de pago, que
-comparte el mismo bloque de dibujo).
+descargable, corrección visual de la celda "Tasa BCV" y del botón "Cerrar
+sesión", varios ajustes de texto/alineación en la Nota de Débito, y la
+última tanda: interruptor para unir/separar factura y ND, agrupación de
+2+ códigos del mismo tipo (mismo proveedor con varios códigos de leche o de
+transporte), y un selector de formato único (PDF/Imagen) que simplifica la
+descarga de factura y ND por separado.
 
 ## 2. Estado actual
 
 Todo está implementado, tipado sin errores (`npm run check`), pasa
-`test:core`/`test:parser`, se probó a mano en el navegador (incluido el flujo
-completo de vínculo leche+flete con los PDF reales de `entradas/`, la
-descarga real de una Nota de Débito verificada leyendo el PDF generado, y la
-descarga de un comprobante de pago normal para confirmar que comparte los
-mismos cambios), está commiteado y pusheado a `origin/master`, y compilado
-en `release/CompPago-1.2.0-windows.zip` (`npm run electron:build` completo).
+`test:core`/`test:parser` (incluidas pruebas nuevas de la agrupación mismo
+tipo: suma correcta, exclusión mutua con vínculos cruzados, disolución de
+grupo), se probó a mano en el navegador con datos reales de `entradas/`
+(candidato de agrupación real detectado y confirmado, factura combinada
+descargada y leída, desglose por código verificado, interruptor de
+separar ND verificado persistente tras recargar), está commiteado y
+pusheado a `origin/master`, y compilado en
+`release/CompPago-1.3.0-windows.zip` (`npm run electron:build` completo).
 
-**Versión actual: `1.2.0`** (subida en esta tanda, ver sección 3).
+**Versión actual: `1.3.0`** (subida en esta tanda, ver sección 3).
 
 Últimos commits:
 
 ```
-(este commit) Corrige alineación de Tasa BCV, botón de cerrar sesión y ajustes de Nota de Débito; sube a 1.2.0
+(este commit) Interruptor unir/separar ND, agrupación de códigos del mismo tipo, selector de formato único; sube a 1.3.0
+0100869 Corrige alineación de Tasa BCV, botón de cerrar sesión y ajustes de Nota de Débito; sube a 1.2.0
 486eed7 Cerrar sesión en el riel, semanas ganaderas por calendario, y Nota de Débito independiente
-cb31545 Comprobante: ND desglosada, conceptos manuales financieros y versión automática
 ```
 
 Pendiente de decisión del usuario, no de código:
@@ -209,7 +213,7 @@ concepto manual hay que mirar la vista previa/PDF, no la tabla de la lista.
   texto escapada, sin cambiar el comportamiento — verificado con
   `npm run check`/`test:core` y confirmando `0` bytes nulos en el archivo.
 
-### Esta sesión
+### Sesión anterior (2): Tasa BCV, botón riel, alineación de ND
 
 **Tasa BCV: corregido el desfase de la línea en modo lectura**
 (`src/ui/screens/Tasas.tsx`)
@@ -270,6 +274,94 @@ concepto manual hay que mirar la vista previa/PDF, no la tabla de la lista.
   normal para el mismo proveedor, interceptando la descarga y leyendo el PDF
   generado — los 4 ajustes se ven correctos en ambos documentos.
 
+### Esta sesión
+
+**Fase A — Selector de formato único + acciones "Factura"/"ND"**
+(`src/ui/screens/Comprobantes.tsx`)
+- Reemplaza los botones "PDF"/"IMG"/"ND" (fila) y "⬇ ZIP en PDF"/"⬇ ZIP en
+  imagen"/"⬇ ZIP notas de débito" (lote) por un único `<select>` "PDF/Imagen"
+  en la barra superior + dos acciones simples: "Factura" y "ND" (fila),
+  "⬇ ZIP Factura" y "⬇ ZIP ND" (lote), cada una usando el formato elegido.
+  El botón "ND" ya no está fijo a `'pdf'`. El modal de vista previa se
+  simplificó igual ("Descargar factura"/"Descargar ND").
+- No se tocó `src/ui/salida/generar.ts`: `formato` ya era un parámetro
+  independiente de qué se dibuja (`dibujarComprobante` vs
+  `dibujarNotaDebito`), confirmado explorando el código antes de tocar nada
+  — este cambio fue puro cableado de UI.
+
+**Fase B — Interruptor "unir/separar" factura y ND (persistente)**
+(`src/core/receipt/dibujo.ts`, `src/ui/screens/Comprobantes.tsx`)
+- Nuevo campo `OpcionesDibujo.separarNd` (default `false`). En
+  `dibujarComprobante`, `mostrarNd` pasa a exigir también `!opciones.separarNd`
+  — con el interruptor activo, la factura ya no dibuja la caja/tabla de ND,
+  pero sí conserva las líneas de referencia "Fecha de Factura/Nota de
+  débito". `dibujarNotaDebito` no cambia.
+- Nueva casilla en el modal "⚙ Contenido": "Separar la nota de débito en un
+  documento aparte". A diferencia de las otras 3 casillas (de sesión), esta
+  se guarda con `db.ajuste('separarFacturaNd')`/`fijarAjuste(...)` — clave
+  **global**, no por nómina.
+- **Bug real encontrado y corregido durante la verificación**: la primera
+  versión de `fijarOpciones` llamaba a `db.fijarAjuste(...)` pero **no**
+  llamaba a `cambiado()` — sin eso, `persistencia.current?.marcarSucio()`
+  nunca se dispara y el cambio se queda solo en la base sql.js en memoria,
+  sin volcarse a OPFS. Al recargar la página el interruptor volvía a
+  aparecer desmarcado. Se corrigió agregando `cambiado()` (mismo patrón que
+  `fijarFechas`, que sí lo hacía). Verificado con una recarga completa real
+  del navegador: el interruptor sigue marcado después.
+
+**Fase C — Agrupar códigos del mismo tipo (mecanismo nuevo y paralelo)**
+- No se tocó nada de `vinculos_proveedor`/`ModalVinculo.tsx`/"Vínculos
+  leche-transporte" en Ajustes — sigue exactamente igual. Se agregó un
+  mecanismo **separado e independiente**, mutuamente excluyente con ese
+  (un código participa en uno u otro, nunca en los dos — validado en ambos
+  sentidos con una guarda en `confirmarVinculo` y en
+  `confirmarGrupoMismoTipo`).
+- `src/core/db/esquema.ts` — tabla nueva `grupo_mismo_tipo` (una fila por
+  código; todas las filas con el mismo `grupo_id` son un grupo; un miembro
+  marcado `principal`) + `grupo_mismo_tipo_descartado` (para no re-sugerir
+  un documento ya rechazado). Ambas aditivas, sin subir `VERSION_ESQUEMA`.
+- `src/core/db/repo.ts` — `candidatosGrupoMismoTipo` (agrupa por
+  `digitosDocumento`, reusado sin cambios de `identidad.ts`),
+  `gruposMismoTipo`, `grupoDeCodigo`, `confirmarGrupoMismoTipo` (funde
+  grupos si algún código ya estaba agrupado), `quitarDeGrupoMismoTipo`
+  (disuelve el grupo entero si queda 1 solo miembro),
+  `descartarCandidatoGrupoMismoTipo`.
+- `src/core/receipt/comprobanteAgrupado.ts` (nuevo) —
+  `construirComprobanteAgrupado(miembros, principalCodigo)`: análogo a
+  `comprobanteCombinado.ts` pero para N registros del mismo tipo en vez de
+  2 de tipos distintos; suma bruto/deducciones/neto/total a facturar con
+  `.reduce()`, identidad toma la del miembro principal, folio
+  `codigos.join('+')`.
+- `src/core/types.ts`/`comprobante.ts` — tipos **agregados**, no se tocaron
+  los existentes: `NotaDebitoAgrupada` (análogo a `NotaDebitoCombinada` pero
+  con `porCodigo: Array<{codigo, resultado}>`), `DatosComprobante.agrupado`
+  (análogo a `.combinado` pero con `miembros: Array<...>`),
+  `LineaConcepto.origenCodigo` (nuevo campo opcional, separado de `origen`).
+- `src/core/receipt/dibujo.ts` — `datosDetalleNd`/`altoDetalleNd`/
+  `dibujarDetalleNd` generalizados: el desglose "Leche: X / Flete: Y" pasa a
+  ser una lista `desglose: {etiqueta, centimos}[]` de N líneas (antes 2 fijas),
+  cubriendo también `notaDebitoAgrupada`. El divisor "LECHE"/"FLETE" entre
+  líneas de conceptos (`marcaOrigen`) se generalizó igual para mostrar
+  "CÓDIGO {código}" cuando la línea trae `origenCodigo` en vez de `origen`.
+- `src/ui/components/ModalGrupoMismoTipo.tsx` (nuevo, patrón de
+  `ModalVinculo.tsx`): candidato = lista de 2+ registros del mismo tipo con
+  el mismo documento.
+- `src/ui/screens/Ajustes.tsx` — nueva tarjeta "Agrupar códigos del mismo
+  tipo" (separada de "Vínculos leche-transporte"): una fila por grupo,
+  botón "Desagrupar" por código.
+- `src/ui/screens/Comprobantes.tsx` — `unidadDe()` gana una rama nueva:
+  si no hay `contraparte` cruzada (son excluyentes), busca `grupoDeCodigo`
+  y arma el comprobante agrupado; píldora "🔗 agrupado con {códigos}" +
+  botón "✕ desagrupar", y "🔗 posible agrupación con {códigos}" para
+  candidatos sin confirmar (mismo patrón visual que el vínculo cruzado).
+- **Verificado de punta a punta con datos reales**: al cargar
+  `GAN0584_4.pdf`, la app detectó solo un candidato real —dos códigos de
+  leche (009170 y 008911, "CARLOS EDUARDO SIMOZA MONTIL") con el mismo
+  RIF—, se confirmó desde el botón de la fila, y se descargó/leyó la
+  factura combinada resultante: litros y montos exactamente la suma de
+  ambos códigos, con el desglose "CÓDIGO 009170"/"CÓDIGO 008911" visible
+  en la lista de conceptos.
+
 ## 4. Intentos fallidos / notas técnicas
 
 - Automatizar clics de mouse (`computer.left_click`) no siempre disparaba
@@ -326,6 +418,14 @@ concepto manual hay que mirar la vista previa/PDF, no la tabla de la lista.
   `basedatos.ts`: `PRAGMA table_info(tabla)` para ver si la columna ya
   existe, y si no, `ALTER TABLE ... ADD COLUMN` dentro de `migrar()`, sin
   tocar `VERSION_ESQUEMA`.
+- **Cualquier escritura con `db.fijarAjuste`/`db.correr` que deba
+  sobrevivir a un recargar necesita también llamar a `cambiado()`.**
+  `cambiado()` es lo que dispara `persistencia.current?.marcarSucio()` (el
+  volcado a OPFS/disco); sin esa llamada, el cambio queda solo en la base
+  sql.js en memoria de esa sesión y desaparece al recargar. No es automático
+  por escribir en la base — hay que acordarse de llamarlo explícitamente en
+  cada handler que persista algo nuevo (visto con el interruptor
+  `separarNd`, sección 3).
 - **El proyecto vive dentro de una carpeta sincronizada por OneDrive.** Esto
   puede hacer que Node reporte mal ciertas carpetas (reparse points) como
   symlinks vía `Dirent.isSymbolicLink()`/`isDirectory()`. Si un script que

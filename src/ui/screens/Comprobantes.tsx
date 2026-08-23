@@ -4,10 +4,12 @@ import { Aviso, Dato, Modal, Pastilla, Semaforo, Tarjeta, Vacio } from '../compo
 import { ModalConceptoManual } from '../components/ModalConceptoManual.tsx';
 import { ModalNotaDebito } from '../components/ModalNotaDebito.tsx';
 import { ModalVinculo } from '../components/ModalVinculo.tsx';
+import { ModalGrupoMismoTipo } from '../components/ModalGrupoMismoTipo.tsx';
 import { VistaPrevia } from '../components/VistaPrevia.tsx';
 import * as repo from '../../core/db/repo.ts';
 import { construirComprobante, type ContextoComprobante, type DatosComprobante } from '../../core/receipt/comprobante.ts';
 import { construirComprobanteCombinado } from '../../core/receipt/comprobanteCombinado.ts';
+import { construirComprobanteAgrupado } from '../../core/receipt/comprobanteAgrupado.ts';
 import { OPCIONES_DIBUJO, type OpcionesDibujo } from '../../core/receipt/dibujo.ts';
 import { nombreLote } from '../../core/receipt/nombreArchivo.ts';
 import {
@@ -37,7 +39,19 @@ export function Comprobantes({ nominaIdInicial }: { nominaIdInicial?: string }) 
   const [busqueda, setBusqueda] = useState('');
   const [fabrica, setFabrica] = useState('');
   const [soloConNd, setSoloConNd] = useState(false);
-  const [opciones, setOpciones] = useState<OpcionesDibujo>(OPCIONES_DIBUJO);
+  const [formato, setFormato] = useState<Formato>('pdf');
+  // `separarNd` es la única opción que se guarda de forma permanente (ajuste
+  // global); las demás son de sesión, como siempre.
+  const [opciones, setOpciones] = useState<OpcionesDibujo>(() => ({
+    ...OPCIONES_DIBUJO,
+    separarNd: db.ajuste('separarFacturaNd') === '1',
+  }));
+
+  function fijarOpciones(nuevas: OpcionesDibujo) {
+    setOpciones(nuevas);
+    db.fijarAjuste('separarFacturaNd', nuevas.separarNd ? '1' : '0');
+    cambiado();
+  }
 
   const [dialogo, setDialogo] = useState<
     | { tipo: 'manual'; ids: string[] }
@@ -45,6 +59,7 @@ export function Comprobantes({ nominaIdInicial }: { nominaIdInicial?: string }) 
     | { tipo: 'previa'; id: string }
     | { tipo: 'opciones' }
     | { tipo: 'vinculo'; candidato: repo.CandidatoVinculo }
+    | { tipo: 'grupo'; candidato: repo.CandidatoGrupoMismoTipo }
     | null
   >(null);
   const [progreso, setProgreso] = useState<{ hechos: number; total: number; nombre: string } | null>(
@@ -151,8 +166,23 @@ export function Comprobantes({ nominaIdInicial }: { nominaIdInicial?: string }) 
     };
   }
 
-  /** Resuelve un registro a lo que hay que generar: individual, o combinado
-   * con su contraparte si ya está vinculado y esa nómina está cargada. */
+  // ── Agrupación del mismo tipo: mecanismo separado y excluyente del
+  //    vínculo cruzado leche-transporte de arriba. Vive dentro de una sola
+  //    nómina/tipo, así que no hace falta lógica de nómina hermana.
+  const candidatosGrupo = repo.candidatosGrupoMismoTipo(db, nomina.tipo, nomina.anio, nomina.numero);
+  const candidatoGrupoPorCodigo = new Map(
+    candidatosGrupo.flatMap((c) => c.registros.map((r) => [r.leido.codigo, c] as const)),
+  );
+  const grupoPorCodigo = new Map(
+    repo
+      .gruposMismoTipo(db)
+      .filter((g) => g.tipo === nomina.tipo)
+      .flatMap((g) => g.codigos.map((c) => [c, g] as const)),
+  );
+
+  /** Resuelve un registro a lo que hay que generar: individual, combinado
+   * con su contraparte cruzada si ya está vinculado, o agrupado con otros
+   * códigos del mismo tipo si ya está agrupado (excluyentes entre sí). */
   function unidadDe(r: (typeof registros)[number]): {
     registroIds: string[];
     datos: DatosComprobante;
@@ -163,22 +193,36 @@ export function Comprobantes({ nominaIdInicial }: { nominaIdInicial?: string }) 
       ? otrosRegistros.find((x) => x.leido.codigo === contraparteCodigo)
       : undefined;
 
-    if (!contraparte) {
-      return { registroIds: [r.id], datos: datosDe(r), combinado: false };
+    if (contraparte) {
+      const combinado =
+        nomina!.tipo === 'leche'
+          ? construirComprobanteCombinado(
+              r.leido, r.manuales, r.notaDebito, ctx,
+              contraparte.leido, contraparte.manuales, contraparte.notaDebito, ctxOtro,
+            )
+          : construirComprobanteCombinado(
+              contraparte.leido, contraparte.manuales, contraparte.notaDebito, ctxOtro,
+              r.leido, r.manuales, r.notaDebito, ctx,
+            );
+
+      return { registroIds: [r.id, contraparte.id], datos: combinado, combinado: true };
     }
 
-    const combinado =
-      nomina!.tipo === 'leche'
-        ? construirComprobanteCombinado(
-            r.leido, r.manuales, r.notaDebito, ctx,
-            contraparte.leido, contraparte.manuales, contraparte.notaDebito, ctxOtro,
-          )
-        : construirComprobanteCombinado(
-            contraparte.leido, contraparte.manuales, contraparte.notaDebito, ctxOtro,
-            r.leido, r.manuales, r.notaDebito, ctx,
-          );
+    const grupo = grupoPorCodigo.get(r.leido.codigo);
+    const miembros = grupo
+      ? grupo.codigos
+          .map((c) => registros.find((x) => x.leido.codigo === c))
+          .filter((x): x is (typeof registros)[number] => x !== undefined)
+      : [];
+    if (grupo && miembros.length > 1) {
+      const agrupado = construirComprobanteAgrupado(
+        miembros.map((m) => ({ registro: m.leido, manuales: m.manuales, paramsNd: m.notaDebito, ctx })),
+        grupo.principal,
+      );
+      return { registroIds: miembros.map((m) => m.id), datos: agrupado, combinado: true };
+    }
 
-    return { registroIds: [r.id, contraparte.id], datos: combinado, combinado: true };
+    return { registroIds: [r.id], datos: datosDe(r), combinado: false };
   }
 
   const fabricas = [...new Set(registros.map((r) => r.leido.fabricaCod))].sort();
@@ -360,6 +404,14 @@ export function Comprobantes({ nominaIdInicial }: { nominaIdInicial?: string }) 
               </option>
             ))}
           </select>
+          <select
+            value={formato}
+            onChange={(e) => setFormato(e.target.value as Formato)}
+            title="Formato de descarga"
+          >
+            <option value="pdf">PDF</option>
+            <option value="png">Imagen</option>
+          </select>
           <button className="btn" onClick={() => setDialogo({ tipo: 'opciones' })}>
             ⚙ Contenido
           </button>
@@ -482,16 +534,9 @@ export function Comprobantes({ nominaIdInicial }: { nominaIdInicial?: string }) 
           <button
             className="btn chico"
             disabled={elegidos.length === 0 || progreso !== null || !puedo('generar-comprobante')}
-            onClick={() => void descargar(elegidos.map((r) => r.id), 'pdf', true)}
+            onClick={() => void descargar(elegidos.map((r) => r.id), formato, true)}
           >
-            ⬇ ZIP en PDF
-          </button>
-          <button
-            className="btn chico"
-            disabled={elegidos.length === 0 || progreso !== null || !puedo('generar-comprobante')}
-            onClick={() => void descargar(elegidos.map((r) => r.id), 'png', true)}
-          >
-            ⬇ ZIP en imagen
+            ⬇ ZIP Factura
           </button>
           <button
             className="btn chico"
@@ -500,9 +545,9 @@ export function Comprobantes({ nominaIdInicial }: { nominaIdInicial?: string }) 
               progreso !== null ||
               !puedo('generar-comprobante')
             }
-            onClick={() => void descargarNd(elegidos.map((r) => r.id), 'pdf', true)}
+            onClick={() => void descargarNd(elegidos.map((r) => r.id), formato, true)}
           >
-            ⬇ ZIP notas de débito
+            ⬇ ZIP ND
           </button>
         </div>
 
@@ -528,6 +573,8 @@ export function Comprobantes({ nominaIdInicial }: { nominaIdInicial?: string }) 
                 const yaDescargado = descargas.get(r.id);
                 const candidato = candidatoPorCodigo.get(r.leido.codigo);
                 const contraparte = contraparteDe(r.leido.codigo);
+                const candidatoGrupo = candidatoGrupoPorCodigo.get(r.leido.codigo);
+                const grupo = grupoPorCodigo.get(r.leido.codigo);
                 // La unidad (individual o combinada) es la que de verdad
                 // decide si hay ND que descargar aparte — el `nd` de arriba
                 // es solo del lado de esta fila, no del combinado.
@@ -583,6 +630,40 @@ export function Comprobantes({ nominaIdInicial }: { nominaIdInicial?: string }) 
                         <div className="tenue pequeno" style={{ marginTop: 4 }}>
                           🔗 vinculado — falta cargar la nómina de{' '}
                           {otroTipo === 'leche' ? 'leche' : 'flete'} de esta semana
+                        </div>
+                      )}
+                      {!contraparte && candidatoGrupo && (
+                        <button
+                          className="btn sutil chico"
+                          style={{ marginTop: 4 }}
+                          onClick={() => setDialogo({ tipo: 'grupo', candidato: candidatoGrupo })}
+                        >
+                          🔗 posible agrupación con{' '}
+                          {candidatoGrupo.registros
+                            .filter((x) => x.leido.codigo !== r.leido.codigo)
+                            .map((x) => x.leido.codigo)
+                            .join(', ')}
+                        </button>
+                      )}
+                      {!contraparte && grupo && grupo.codigos.length > 1 && (
+                        <div style={{ marginTop: 4 }}>
+                          <Pastilla tono="ok">
+                            🔗 agrupado con{' '}
+                            {grupo.codigos.filter((c) => c !== r.leido.codigo).join(', ')}
+                          </Pastilla>{' '}
+                          {puedo('vincular-proveedor') && (
+                            <button
+                              className="btn sutil chico"
+                              onClick={() => {
+                                if (!usuario) return;
+                                void repo
+                                  .quitarDeGrupoMismoTipo(db, usuario, r.leido.codigo)
+                                  .then(() => cambiado());
+                              }}
+                            >
+                              ✕ desagrupar
+                            </button>
+                          )}
                         </div>
                       )}
                     </td>
@@ -641,23 +722,16 @@ export function Comprobantes({ nominaIdInicial }: { nominaIdInicial?: string }) 
                       <button
                         className="btn chico"
                         disabled={progreso !== null || !puedo('generar-comprobante')}
-                        onClick={() => void descargar([r.id], 'pdf', false)}
+                        onClick={() => void descargar([r.id], formato, false)}
                       >
-                        PDF
-                      </button>
-                      <button
-                        className="btn chico"
-                        disabled={progreso !== null || !puedo('generar-comprobante')}
-                        onClick={() => void descargar([r.id], 'png', false)}
-                      >
-                        IMG
+                        Factura
                       </button>
                       {ndDescargable && (
                         <button
                           className="btn chico"
                           title="Descargar solo la nota de débito"
                           disabled={progreso !== null || !puedo('generar-comprobante')}
-                          onClick={() => void descargarNd([r.id], 'pdf', false)}
+                          onClick={() => void descargarNd([r.id], formato, false)}
                         >
                           ND
                         </button>
@@ -796,17 +870,19 @@ export function Comprobantes({ nominaIdInicial }: { nominaIdInicial?: string }) 
               <button
                 className="btn primario"
                 disabled={!puedo('generar-comprobante')}
-                onClick={() => void descargar([registroPrevia.id], 'pdf', false)}
+                onClick={() => void descargar([registroPrevia.id], formato, false)}
               >
-                Descargar PDF
+                Descargar factura
               </button>
-              <button
-                className="btn primario"
-                disabled={!puedo('generar-comprobante')}
-                onClick={() => void descargar([registroPrevia.id], 'png', false)}
-              >
-                Descargar imagen
-              </button>
+              {ndAplica(unidadDe(registroPrevia).datos) && (
+                <button
+                  className="btn primario"
+                  disabled={!puedo('generar-comprobante')}
+                  onClick={() => void descargarNd([registroPrevia.id], formato, false)}
+                >
+                  Descargar ND
+                </button>
+              )}
             </>
           }
         >
@@ -842,6 +918,32 @@ export function Comprobantes({ nominaIdInicial }: { nominaIdInicial?: string }) 
                 dialogo.candidato.registroTransporte.leido.codigo,
                 dialogo.candidato.documento,
               )
+              .then(() => cambiado());
+          }}
+        />
+      )}
+
+      {dialogo?.tipo === 'grupo' && usuario && (
+        <ModalGrupoMismoTipo
+          candidato={dialogo.candidato}
+          puedeVincular={puedo('vincular-proveedor')}
+          alCerrar={() => setDialogo(null)}
+          alConfirmar={() => {
+            void repo
+              .confirmarGrupoMismoTipo(
+                db,
+                usuario,
+                dialogo.candidato.tipo,
+                dialogo.candidato.registros.map((r) => r.leido.codigo),
+              )
+              .then(() => cambiado())
+              .catch((e: unknown) => {
+                setMensaje({ nivel: 'error', texto: e instanceof Error ? e.message : String(e) });
+              });
+          }}
+          alRechazar={() => {
+            void repo
+              .descartarCandidatoGrupoMismoTipo(db, usuario, dialogo.candidato.tipo, dialogo.candidato.documento)
               .then(() => cambiado());
           }}
         />
@@ -891,6 +993,21 @@ export function Comprobantes({ nominaIdInicial }: { nominaIdInicial?: string }) 
             <span>
               Mostrar la nota de débito
               <small>Solo aparece en los proveedores que tengan una configurada.</small>
+            </span>
+          </label>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={opciones.separarNd}
+              onChange={(e) => fijarOpciones({ ...opciones, separarNd: e.target.checked })}
+            />
+            <span>
+              Separar la nota de débito en un documento aparte
+              <small>
+                Si está desmarcado, la ND aparece dentro de la factura (como hoy); si la marcas, la
+                factura sale limpia y la ND se descarga por separado con el botón "ND". Esta opción
+                queda guardada para siempre, no se resetea entre sesiones.
+              </small>
             </span>
           </label>
         </Modal>

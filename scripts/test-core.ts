@@ -30,6 +30,8 @@ import { puede } from '../src/core/auth/permisos.ts';
 import { paginasDesdePdf, type DocumentoPdf } from '../src/core/parser/desdePdfjs.ts';
 import { parseNomina } from '../src/core/parser/parseNomina.ts';
 import { calcularNotaDebito, calcularRegistro, bsAUsd, usdABs } from '../src/core/calc/calcular.ts';
+import { construirComprobanteAgrupado } from '../src/core/receipt/comprobanteAgrupado.ts';
+import type { ContextoComprobante } from '../src/core/receipt/comprobante.ts';
 import { sha256DeBytes } from '../src/core/auth/hash.ts';
 import {
   formatearBs,
@@ -509,6 +511,73 @@ const reabierta = await BaseDatos.abrir(localizarWasm, dbVieja.exportar());
 ok(reabierta.desactualizada, 'Detecta un archivo del modelo anterior');
 ok(reabierta.versionArchivo === 1, 'Informa qué versión tenía', String(reabierta.versionArchivo));
 ok(reabierta.exportar().length > 0, 'Se puede respaldar antes de reemplazarla');
+
+// ═══ Agrupación del mismo tipo ═══
+console.log(`\n${B}Agrupación del mismo tipo${N}`);
+{
+  await repo.confirmarGrupoMismoTipo(db, admin, 'leche', [prolamar.leido.codigo, grippi.leido.codigo]);
+  const grupo = repo.grupoDeCodigo(db, 'leche', prolamar.leido.codigo);
+  ok(
+    grupo !== null && grupo.codigos.length === 2,
+    'Agrupa 2 códigos de leche',
+    grupo ? grupo.codigos.join(', ') : '',
+  );
+  ok(grupo?.principal === prolamar.leido.codigo, 'El primero confirmado queda como principal');
+
+  const ctxAgrupado: ContextoComprobante = {
+    catalogo: repo.catalogoMapa(db),
+    empresaPorFabrica: (cod) => repo.empresaDeFabrica(db, cod),
+    nombreCompleto: () => undefined,
+    tasas: repo.tasasMapa(db),
+    titulo: 'PAGO DE LECHE FRESCA',
+    tipo: 'leche',
+    anio: leche.anio,
+    numero: leche.numero,
+    fechaIni: leche.fechaIni,
+    fechaFin: leche.fechaFin,
+  };
+  const agrupado = construirComprobanteAgrupado(
+    [
+      { registro: prolamar.leido, manuales: prolamar.manuales, paramsNd: prolamar.notaDebito, ctx: ctxAgrupado },
+      { registro: grippi.leido, manuales: grippi.manuales, paramsNd: grippi.notaDebito, ctx: ctxAgrupado },
+    ],
+    grupo!.principal,
+  );
+  ok(
+    agrupado.bruto === prolamar.bruto + grippi.bruto,
+    'El bruto agrupado es la suma de ambos códigos',
+    formatearBs(agrupado.bruto),
+  );
+  ok(
+    agrupado.totalFacturar === prolamar.totalFacturar + grippi.totalFacturar,
+    'El total a facturar agrupado también suma ambos',
+  );
+  ok(agrupado.agrupado?.miembros.length === 2, 'Guarda el desglose de ambos códigos miembro');
+
+  const registrosTransporte = repo.registrosDeNomina(db, idTransporte);
+  const rutaLibre = registrosTransporte[0]!;
+  await esperaError(
+    () => repo.confirmarVinculo(db, admin, prolamar.leido.codigo, rutaLibre.leido.codigo, null),
+    'No deja vincular cruzado un código ya agrupado (exclusión mutua)',
+  );
+
+  await repo.quitarDeGrupoMismoTipo(db, admin, grippi.leido.codigo);
+  ok(
+    repo.grupoDeCodigo(db, 'leche', prolamar.leido.codigo) === null,
+    'Al sacar un miembro de un grupo de 2, se disuelve entero',
+  );
+
+  const otroLeche = registrosLeche.find(
+    (r) => r.leido.codigo !== prolamar.leido.codigo && r.leido.codigo !== grippi.leido.codigo,
+  )!;
+  await repo.confirmarVinculo(db, admin, otroLeche.leido.codigo, rutaLibre.leido.codigo, null);
+  await esperaError(
+    () =>
+      repo.confirmarGrupoMismoTipo(db, admin, 'leche', [otroLeche.leido.codigo, grippi.leido.codigo]),
+    'No deja agrupar un código ya vinculado cruzado (exclusión mutua)',
+  );
+  await repo.desvincularProveedor(db, admin, otroLeche.leido.codigo, rutaLibre.leido.codigo);
+}
 
 // ═══ Borrado ═══
 console.log(`\n${B}Borrado en cascada${N}`);
