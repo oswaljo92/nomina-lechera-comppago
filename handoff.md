@@ -12,31 +12,34 @@ en el riel, semana ganadera calculada por calendario (sin depender de
 nóminas cargadas), la Nota de Débito como documento independiente
 descargable, corrección visual de la celda "Tasa BCV" y del botón "Cerrar
 sesión", varios ajustes de texto/alineación en la Nota de Débito, y la
-última tanda: interruptor para unir/separar factura y ND, agrupación de
-2+ códigos del mismo tipo (mismo proveedor con varios códigos de leche o de
-transporte), y un selector de formato único (PDF/Imagen) que simplifica la
-descarga de factura y ND por separado.
+interruptor para unir/separar factura y ND, agrupación de 2+ códigos del
+mismo tipo (mismo proveedor con varios códigos de leche o de transporte),
+un selector de formato único (PDF/Imagen) que simplifica la descarga de
+factura y ND por separado, y la última tanda: un bug real donde el botón
+"ND" no aparecía para proveedores agrupados, y dos ajustes de tabla
+(desbordamiento horizontal en escritorio, espaciado en tarjeta móvil).
 
 ## 2. Estado actual
 
 Todo está implementado, tipado sin errores (`npm run check`), pasa
-`test:core`/`test:parser` (incluidas pruebas nuevas de la agrupación mismo
-tipo: suma correcta, exclusión mutua con vínculos cruzados, disolución de
+`test:core`/`test:parser` (incluidas pruebas de la agrupación mismo tipo:
+suma correcta, exclusión mutua con vínculos cruzados, disolución de
 grupo), se probó a mano en el navegador con datos reales de `entradas/`
 (candidato de agrupación real detectado y confirmado, factura combinada
 descargada y leída, desglose por código verificado, interruptor de
-separar ND verificado persistente tras recargar), está commiteado y
-pusheado a `origin/master`, y compilado en
-`release/CompPago-1.3.0-windows.zip` (`npm run electron:build` completo).
+separar ND verificado persistente tras recargar, botón "ND" confirmado
+visible en un proveedor agrupado, tabla sin desbordamiento a 1280px),
+está commiteado y pusheado a `origin/master`, y compilado en
+`release/CompPago-1.3.1-windows.zip` (`npm run electron:build` completo).
 
-**Versión actual: `1.3.0`** (subida en esta tanda, ver sección 3).
+**Versión actual: `1.3.1`** (subida en esta tanda, ver sección 3).
 
 Últimos commits:
 
 ```
-(este commit) Interruptor unir/separar ND, agrupación de códigos del mismo tipo, selector de formato único; sube a 1.3.0
+(este commit) Corrige boton ND en agrupados y ajustes de tabla (desborde/espaciado); sube a 1.3.1
+c4bb01c Interruptor unir/separar ND, agrupación de códigos del mismo tipo, selector de formato único; sube a 1.3.0
 0100869 Corrige alineación de Tasa BCV, botón de cerrar sesión y ajustes de Nota de Débito; sube a 1.2.0
-486eed7 Cerrar sesión en el riel, semanas ganaderas por calendario, y Nota de Débito independiente
 ```
 
 Pendiente de decisión del usuario, no de código:
@@ -274,7 +277,7 @@ concepto manual hay que mirar la vista previa/PDF, no la tabla de la lista.
   normal para el mismo proveedor, interceptando la descarga y leyendo el PDF
   generado — los 4 ajustes se ven correctos en ambos documentos.
 
-### Esta sesión
+### Sesión anterior (3): interruptor unir/separar ND, agrupación mismo tipo, selector de formato
 
 **Fase A — Selector de formato único + acciones "Factura"/"ND"**
 (`src/ui/screens/Comprobantes.tsx`)
@@ -361,6 +364,55 @@ concepto manual hay que mirar la vista previa/PDF, no la tabla de la lista.
   factura combinada resultante: litros y montos exactamente la suma de
   ambos códigos, con el desglose "CÓDIGO 009170"/"CÓDIGO 008911" visible
   en la lista de conceptos.
+
+### Esta sesión
+
+**Bug real: el botón "ND" no aparecía en proveedores agrupados**
+(`src/ui/screens/Comprobantes.tsx`)
+- `ndAplica(datos)` solo miraba `datos.notaDebitoCombinada`/`datos.notaDebito`
+  — nunca se actualizó para revisar `datos.notaDebitoAgrupada` al agregar la
+  Fase C de la sesión anterior. Resultado: para cualquier unidad agrupada
+  (mismo tipo) con ND aplicable, el botón "ND" por fila, el de la barra de
+  lote y el del modal de vista previa se quedaban ocultos aunque la columna
+  "Nota de débito"/pastilla "Con ND" sí mostraran el valor (esas sí leen el
+  registro individual, no `unidadDe`). Corregido agregando la rama que
+  faltaba: `if (datos.notaDebitoAgrupada) return datos.notaDebitoAgrupada.aplica;`.
+  Reportado por el usuario con una captura real donde solo aparecía
+  "Factura"; verificado que tras el fix aparece "Factura ND" en la misma
+  fila.
+
+**Tabla de Comprobantes: desbordamiento horizontal en escritorio**
+(`src/ui/estilos.css`)
+- A 1280px de ventana (portátil típico con el riel de 232px), la tabla
+  necesitaba ~1138px pero el contenedor solo tenía 979px disponibles →
+  scroll horizontal, con la columna "Comprobante" cortada (tal como se ve
+  en la captura del usuario). Dos causas, ambas de especificidad CSS:
+  1. `table.tabla th` ya tenía `white-space: nowrap` implícito porque la
+     regla compartida `table.tabla td.num, table.tabla th.num` (más
+     específica, `.num` en ambos) forzaba `nowrap` también en los
+     encabezados numéricos ("Total a facturar", "Nota de débito", etc.),
+     obligando a la columna a ser tan ancha como la palabra del
+     encabezado en mayúsculas en vez de como el dato. Se separó la regla:
+     `white-space: nowrap` queda solo en `td.num` (el dato nunca debe
+     partirse); el `th.num` hereda `white-space: normal` de la regla base
+     `table.tabla th` y puede envolver a 2 líneas.
+  2. `table.tabla td.acciones-celda` tenía `white-space: nowrap`, obligando
+     a los 5 botones de la fila (👁 + $ Factura ND) a quedar en una sola
+     línea sin importar el ancho disponible. Se quitó el `nowrap` y se le
+     puso `max-width: 160px`: ahora los botones envuelven a 2-3 líneas
+     dentro de un ancho acotado en vez de estirar la columna.
+  - **Verificado**: a 1280px la tabla ya no desborda (`scrollWidth ===
+    clientWidth`, medido con el navegador de pruebas), sin tocar
+    `table-layout` ni el resto de columnas.
+
+**Tarjeta móvil: más espacio entre el nombre y el vínculo/grupo**
+(`src/ui/screens/Comprobantes.tsx`)
+- Los bloques "posible vínculo"/"combinado con"/"posible agrupación"/
+  "agrupado con" bajo el nombre del proveedor tenían `marginTop: 4` —
+  quedaban muy pegados a la línea de código/ruta de arriba. Subido a
+  `marginTop: 8` en los 4 bloques (deja igual el de la columna "Estado",
+  que no es parte de esta queja). Verificado en el navegador a 375px: no
+  hay overflow horizontal ni recorte, solo más aire vertical.
 
 ## 4. Intentos fallidos / notas técnicas
 

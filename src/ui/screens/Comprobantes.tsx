@@ -312,6 +312,7 @@ export function Comprobantes({ nominaIdInicial }: { nominaIdInicial?: string }) 
 
   /** true si la unidad (individual o combinada leche+flete) tiene una ND calculable. */
   function ndAplica(datos: DatosComprobante): boolean {
+    if (datos.notaDebitoAgrupada) return datos.notaDebitoAgrupada.aplica;
     return datos.notaDebitoCombinada ? datos.notaDebitoCombinada.aplica : Boolean(datos.notaDebito?.aplica);
   }
 
@@ -599,14 +600,14 @@ export function Comprobantes({ nominaIdInicial }: { nominaIdInicial?: string }) 
                       {candidato && (
                         <button
                           className="btn sutil chico"
-                          style={{ marginTop: 4 }}
+                          style={{ marginTop: 8 }}
                           onClick={() => setDialogo({ tipo: 'vinculo', candidato })}
                         >
                           🔗 posible vínculo con {otroTipo === 'leche' ? 'leche' : 'flete'}
                         </button>
                       )}
                       {contraparte?.cargada && (
-                        <div style={{ marginTop: 4 }}>
+                        <div style={{ marginTop: 8 }}>
                           <Pastilla tono="ok">🔗 combinado con {contraparte.codigo}</Pastilla>{' '}
                           {puedo('vincular-proveedor') && (
                             <button
@@ -627,7 +628,7 @@ export function Comprobantes({ nominaIdInicial }: { nominaIdInicial?: string }) 
                         </div>
                       )}
                       {contraparte && !contraparte.cargada && (
-                        <div className="tenue pequeno" style={{ marginTop: 4 }}>
+                        <div className="tenue pequeno" style={{ marginTop: 8 }}>
                           🔗 vinculado — falta cargar la nómina de{' '}
                           {otroTipo === 'leche' ? 'leche' : 'flete'} de esta semana
                         </div>
@@ -635,7 +636,7 @@ export function Comprobantes({ nominaIdInicial }: { nominaIdInicial?: string }) 
                       {!contraparte && candidatoGrupo && (
                         <button
                           className="btn sutil chico"
-                          style={{ marginTop: 4 }}
+                          style={{ marginTop: 8 }}
                           onClick={() => setDialogo({ tipo: 'grupo', candidato: candidatoGrupo })}
                         >
                           🔗 posible agrupación con{' '}
@@ -646,7 +647,7 @@ export function Comprobantes({ nominaIdInicial }: { nominaIdInicial?: string }) 
                         </button>
                       )}
                       {!contraparte && grupo && grupo.codigos.length > 1 && (
-                        <div style={{ marginTop: 4 }}>
+                        <div style={{ marginTop: 8 }}>
                           <Pastilla tono="ok">
                             🔗 agrupado con{' '}
                             {grupo.codigos.filter((c) => c !== r.leido.codigo).join(', ')}

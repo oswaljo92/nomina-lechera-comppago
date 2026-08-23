@@ -419,7 +419,11 @@ table.tabla th {
   position: sticky;
   top: 0;
   z-index: 1;
-  white-space: nowrap;
+  /* Que envuelva a 2 líneas en vez de forzar el ancho de la columna: el
+     encabezado no debe ser lo que empuje la tabla a desbordar y pedir
+     scroll horizontal cuando los datos de la columna caben en menos. */
+  white-space: normal;
+  line-height: 1.25;
 }
 table.tabla tbody tr:hover { background: var(--panel-2); }
 table.tabla tbody tr.elegida { background: var(--verde-50); }
@@ -428,9 +432,15 @@ table.tabla td.num, table.tabla th.num {
   font-variant-numeric: tabular-nums;
   font-family: var(--mono);
   font-size: 12.5px;
-  white-space: nowrap;
 }
-table.tabla td.acciones-celda { white-space: nowrap; text-align: right; }
+/* El nowrap es solo para el dato (un número nunca debe partirse); el
+   encabezado puede envolver a 2 líneas para no forzar la columna a ser más
+   ancha que el propio número. */
+table.tabla td.num { white-space: nowrap; }
+table.tabla td.acciones-celda {
+  text-align: right;
+  max-width: 160px;
+}
 table.tabla .nombre-prov { font-weight: 600; }
 table.tabla .sub { font-size: 11.5px; color: var(--texto-2); font-family: var(--sans); }
 table.tabla tfoot td {
