@@ -397,7 +397,10 @@ function datosDetalleNd(datos: DatosComprobante): {
 
 /** Alto que ocupa `dibujarDetalleNd` para el caso en que la ND sí aplica. */
 function altoDetalleNd(desgloseLength: number, filasTablaLength: number): number {
-  return desgloseLength * 9 + (filasTablaLength > 0 ? 16 + filasTablaLength * 9 + 6 : 0);
+  return (
+    (desgloseLength > 0 ? desgloseLength * 9 + 5 : 0) +
+    (filasTablaLength > 0 ? 16 + filasTablaLength * 9 + 6 : 0)
+  );
 }
 
 /**
@@ -412,12 +415,12 @@ function dibujarDetalleNd(l: Lienzo, datos: DatosComprobante, izq: number, y0: n
   const { desglose, filasTabla } = datosDetalleNd(datos);
 
   desglose.forEach((d, i) => {
-    l.texto(`${d.etiqueta}: ${formatearBs(d.centimos)} Bs`, izq + 12, y + 4 + i * 9, {
+    l.texto(`${d.etiqueta}: ${formatearBs(d.centimos)} Bs`, izq + 12, y + 9 + i * 9, {
       tam: 7.5,
       color: COLORES.tenue,
     });
   });
-  y += desglose.length * 9;
+  if (desglose.length > 0) y += desglose.length * 9 + 5;
 
   if (filasTabla.length > 0) {
     const cols = [izq + 12, izq + 60, izq + 130, izq + 210, izq + 290];

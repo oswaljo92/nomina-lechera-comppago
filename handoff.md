@@ -11,13 +11,16 @@ conceptos manuales financieros y nota de débito desglosada, "Cerrar sesión"
 en el riel, semana ganadera calculada por calendario (sin depender de
 nóminas cargadas), la Nota de Débito como documento independiente
 descargable, corrección visual de la celda "Tasa BCV" y del botón "Cerrar
-sesión", varios ajustes de texto/alineación en la Nota de Débito, y la
+sesión", varios ajustes de texto/alineación en la Nota de Débito, el
 interruptor para unir/separar factura y ND, agrupación de 2+ códigos del
 mismo tipo (mismo proveedor con varios códigos de leche o de transporte),
 un selector de formato único (PDF/Imagen) que simplifica la descarga de
-factura y ND por separado, y la última tanda: un bug real donde el botón
-"ND" no aparecía para proveedores agrupados, y dos ajustes de tabla
-(desbordamiento horizontal en escritorio, espaciado en tarjeta móvil).
+factura y ND por separado, el bug del botón "ND" que no aparecía para
+proveedores agrupados, dos ajustes de tabla (desbordamiento horizontal en
+escritorio, espaciado en tarjeta móvil), y la última tanda: un bug real de
+espaciado en la Nota de Débito de un grupo (el desglose por código quedaba
+pegado al borde de la caja verde), confirmado también con datos reales de
+transporte (no solo leche).
 
 ## 2. Estado actual
 
@@ -25,21 +28,22 @@ Todo está implementado, tipado sin errores (`npm run check`), pasa
 `test:core`/`test:parser` (incluidas pruebas de la agrupación mismo tipo:
 suma correcta, exclusión mutua con vínculos cruzados, disolución de
 grupo), se probó a mano en el navegador con datos reales de `entradas/`
-(candidato de agrupación real detectado y confirmado, factura combinada
-descargada y leída, desglose por código verificado, interruptor de
-separar ND verificado persistente tras recargar, botón "ND" confirmado
+tanto de leche como de **transporte** (candidato de agrupación real
+detectado y confirmado en ambos tipos, factura y ND separadas descargadas
+y leídas, desglose por código verificado en ambos documentos, interruptor
+de separar ND verificado persistente tras recargar, botón "ND" confirmado
 visible en un proveedor agrupado, tabla sin desbordamiento a 1280px),
 está commiteado y pusheado a `origin/master`, y compilado en
-`release/CompPago-1.3.1-windows.zip` (`npm run electron:build` completo).
+`release/CompPago-1.3.2-windows.zip` (`npm run electron:build` completo).
 
-**Versión actual: `1.3.1`** (subida en esta tanda, ver sección 3).
+**Versión actual: `1.3.2`** (subida en esta tanda, ver sección 3).
 
 Últimos commits:
 
 ```
-(este commit) Corrige boton ND en agrupados y ajustes de tabla (desborde/espaciado); sube a 1.3.1
+(este commit) Corrige espaciado del desglose por código en la ND; sube a 1.3.2
+f61f0d7 Corrige boton ND en agrupados y ajustes de tabla (desborde/espaciado); sube a 1.3.1
 c4bb01c Interruptor unir/separar ND, agrupación de códigos del mismo tipo, selector de formato único; sube a 1.3.0
-0100869 Corrige alineación de Tasa BCV, botón de cerrar sesión y ajustes de Nota de Débito; sube a 1.2.0
 ```
 
 Pendiente de decisión del usuario, no de código:
@@ -365,7 +369,7 @@ concepto manual hay que mirar la vista previa/PDF, no la tabla de la lista.
   ambos códigos, con el desglose "CÓDIGO 009170"/"CÓDIGO 008911" visible
   en la lista de conceptos.
 
-### Esta sesión
+### Sesión anterior (4): botón ND en agrupados, desborde/espaciado de tabla
 
 **Bug real: el botón "ND" no aparecía en proveedores agrupados**
 (`src/ui/screens/Comprobantes.tsx`)
@@ -414,6 +418,47 @@ concepto manual hay que mirar la vista previa/PDF, no la tabla de la lista.
   que no es parte de esta queja). Verificado en el navegador a 375px: no
   hay overflow horizontal ni recorte, solo más aire vertical.
 
+### Esta sesión
+
+**Verificado con datos reales de transporte, no solo leche**
+- El usuario pidió confirmar que la agrupación del mismo tipo funciona
+  igual para transporte (no solo para leche, único caso probado antes).
+  `entradas/GAN0594_4.pdf` trae un candidato real: "MARCOS TULIO GOMEZ
+  GOMEZ" con los códigos 000569 y 000596 (mismo RIF). Se confirmó el
+  grupo, se activó "Separar la nota de débito" y se descargaron ambos
+  documentos por separado: la factura (sin ND) mostró el total sumado con
+  "CÓDIGO 000569"/"CÓDIGO 000596" en la lista de conceptos (pagos y
+  deducciones), y la ND aparte mostró "DIFERENCIA DE PRECIO SEMANA 31"
+  sumada con el desglose "000569: X Bs" / "000596: Y Bs" y una fila por
+  código en la tabla SERV/LITROS/PRECIO/TASA — igual que con leche, porque
+  `construirComprobanteAgrupado`/`dibujarDetalleNd` nunca distinguen tipo.
+
+**Bug real: el desglose por código en la ND quedaba pegado a la caja
+verde** (`src/core/receipt/dibujo.ts`)
+- Al revisar la ND del grupo de transporte se notó que las líneas
+  "000569: 194.484,43 Bs" / "000596: 97.222,33 Bs" se dibujaban a solo 4pt
+  del borde inferior de la barra verde "DIFERENCIA DE PRECIO SEMANA N" —
+  el mismo tipo de bug de espaciado ya corregido antes para el encabezado
+  SERV/LITROS/..., pero que se había quedado sin arreglar en esta otra
+  línea (`dibujarDetalleNd`, el bloque `desglose.forEach`, que seguía
+  usando `y + 4` en vez de `y + 9`). Corregido subiendo el primer renglón a
+  `y + 9` y sumando 5pt extra al alto reservado en `altoDetalleNd` (para
+  que la caja siga incluyendo exactamente el espacio dibujado). Afecta por
+  igual al caso combinado (Leche/Flete) y al agrupado (N códigos), ya que
+  comparten la misma función.
+- **Truco de verificación que evitó otra ronda de corrupción de base64**:
+  en vez de interceptar el `<a download>` y pasar el PDF por
+  base64/`javascript_tool` (que ya había fallado dos veces por
+  transcripción, ver más abajo), esta vez se dejó que el navegador
+  guardara el archivo de verdad en `C:\Users\usuario\Downloads\` (el
+  entorno de pruebas SÍ escribe ahí) y se leyó ese archivo directamente
+  con la herramienta `Read` — sin ningún paso manual de por medio, cero
+  riesgo de corrupción. Cuando el archivo queda como `.tmp` (un segundo
+  clic de descarga seguido puede quedar pendiente de confirmación del
+  navegador), copiarlo con extensión `.pdf` antes de leerlo: la
+  herramienta `Read` decide cómo interpretar el archivo por su extensión,
+  no por el contenido.
+
 ## 4. Intentos fallidos / notas técnicas
 
 - Automatizar clics de mouse (`computer.left_click`) no siempre disparaba
@@ -440,15 +485,24 @@ concepto manual hay que mirar la vista previa/PDF, no la tabla de la lista.
   herramienta `Read` lee PDFs directamente, no hace falta convertir a imagen.
 - Para reducir una imagen grande antes de codificarla: dibujarla en un
   `<canvas>` a un ancho razonable (~700px) antes de `toDataURL()`.
-- **Cuidado al relayar un base64 grande (>4-5k caracteres) de vuelta al
-  navegador de pruebas a mano.** Un PDF de ND se decodificó una vez con
-  "incorrect data check" (zlib) pese a que el largo en bytes coincidía —
-  la causa fue una duplicación accidental de un tramo al copiar el string
-  por partes, no un problema del navegador ni del código. Si un PDF
-  "descargado" sale con formas/rectángulos rotos o texto faltante al
-  leerlo, sospechar primero de la transcripción del base64 (verificar
-  longitud exacta de cada tramo con Node antes de concatenar) antes de
-  tocar el código de dibujo.
+- **Mejor manera de leer un PDF/imagen descargado en el navegador de
+  pruebas: NO pasarlo por base64 a mano.** Relayar un base64 grande
+  (>4-5k caracteres) copiándolo de vuelta manualmente es propenso a
+  corrupción silenciosa — pasó varias veces con PDFs de ND/factura que
+  salían con formas/rectángulos rotos o texto faltante al leerlos, y en
+  cada caso el archivo real generado por la app estaba perfecto (se
+  confirmó comparando SHA-256 del lado del navegador
+  `crypto.subtle.digest('SHA-256', bytes)` contra el archivo decodificado
+  en disco). El entorno de pruebas SÍ escribe descargas reales en
+  `C:\Users\usuario\Downloads\` — es mucho más simple y 100% confiable
+  dejar que el botón de descarga real guarde el archivo ahí y leerlo
+  directamente con `Read`, sin ningún paso de base64 de por medio. Si el
+  archivo queda con extensión `.tmp` (puede pasar en descargas seguidas
+  sin gesto de usuario real), copiarlo con extensión `.pdf` antes de
+  leerlo — `Read` decide cómo interpretarlo por la extensión. Reservar el
+  truco de `Node.prototype.appendChild`/base64 solo para cuando de verdad
+  no hay alternativa (por ejemplo, comparar bytes exactos sin depender del
+  disco).
 - **`onBlur` de React no se dispara con un evento sintético.** Despachar
   `input.dispatchEvent(new Event('blur', {bubbles:true}))` por script NO
   activa el `onBlur` de React (que se implementa sobre `focusout` con su
