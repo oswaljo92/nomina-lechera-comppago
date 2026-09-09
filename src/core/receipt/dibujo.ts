@@ -252,8 +252,10 @@ function dibujarEncabezadoEmpresa(
 /**
  * Título del documento + folio + nómina/fechas + datos del proveedor. Igual
  * en el comprobante completo y en la nota de débito independiente, salvo el
- * título (parametrizado) y las fechas de factura/ND (siempre visibles aquí,
- * porque en la nota de débito son el dato principal).
+ * título (parametrizado) y qué fecha se muestra: la factura siempre imprime
+ * su "Fecha de Factura" configurada (tenga o no ND aplicable) y, si aplica,
+ * también la fecha de la ND; la ND como documento aparte (`soloFechaNota`)
+ * solo imprime su propia fecha, la de factura no aplica ahí.
  */
 function dibujarBloqueIdentificacion(
   l: Lienzo,
@@ -296,35 +298,29 @@ function dibujarBloqueIdentificacion(
 
   // Fecha de factura y de nota de débito, junto al nombre: es lo primero que
   // el proveedor necesita saber para facturar con la fecha correcta.
+  const lineasFecha: string[] = [];
+  // La fecha de factura configurada en "Fechas del documento" se muestra
+  // siempre en la factura, tenga o no ND aplicable; en la ND como documento
+  // aparte no aplica, ahí solo importa su propia fecha.
+  if (!soloFechaNota) {
+    lineasFecha.push(`Fecha de Factura ${fechaAMostrar(datos.fechaFactura)}`);
+  }
   if (opciones.mostrarNotaDebito) {
-    const lineasFecha: string[] = [];
     if (datos.notaDebitoCombinada) {
       const { leche, transporte } = datos.notaDebitoCombinada;
       if (leche?.aplica) {
-        lineasFecha.push(
-          soloFechaNota
-            ? `Leche · Fecha de Nota de débito ${fechaAMostrar(leche.fechaNota)}`
-            : `Leche · Fecha de Factura ${fechaAMostrar(leche.fechaFactura)}   ·   Fecha de Nota de débito ${fechaAMostrar(leche.fechaNota)}`,
-        );
+        lineasFecha.push(`Leche · Fecha de Nota de débito ${fechaAMostrar(leche.fechaNota)}`);
       }
       if (transporte?.aplica) {
-        lineasFecha.push(
-          soloFechaNota
-            ? `Flete · Fecha de Nota de débito ${fechaAMostrar(transporte.fechaNota)}`
-            : `Flete · Fecha de Factura ${fechaAMostrar(transporte.fechaFactura)}   ·   Fecha de Nota de débito ${fechaAMostrar(transporte.fechaNota)}`,
-        );
+        lineasFecha.push(`Flete · Fecha de Nota de débito ${fechaAMostrar(transporte.fechaNota)}`);
       }
     } else if (datos.notaDebito?.aplica) {
-      lineasFecha.push(
-        soloFechaNota
-          ? `Fecha de Nota de débito ${fechaAMostrar(datos.notaDebito.fechaNota)}`
-          : `Fecha de Factura ${fechaAMostrar(datos.notaDebito.fechaFactura)}   ·   Fecha de Nota de débito ${fechaAMostrar(datos.notaDebito.fechaNota)}`,
-      );
+      lineasFecha.push(`Fecha de Nota de débito ${fechaAMostrar(datos.notaDebito.fechaNota)}`);
     }
-    for (const linea of lineasFecha) {
-      l.texto(linea, izq, y, { tam: 9, peso: 'bold', color: COLORES.verde });
-      y += 12;
-    }
+  }
+  for (const linea of lineasFecha) {
+    l.texto(linea, izq, y, { tam: 9, peso: 'bold', color: COLORES.verde });
+    y += 12;
   }
 
   const campos: [string, string][] = [
@@ -479,7 +475,7 @@ export function dibujarComprobante(
   let y = MARGEN;
 
   y = dibujarEncabezadoEmpresa(l, datos, izq, der, y);
-  y = dibujarBloqueIdentificacion(l, datos, izq, der, y, opciones, 'COMPROBANTE DE PAGO');
+  y = dibujarBloqueIdentificacion(l, datos, izq, der, y, opciones, 'COMPROBANTE');
 
   // ── Litros ──
   if (datos.litrosTotal !== null) {

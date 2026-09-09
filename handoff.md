@@ -35,20 +35,23 @@ desde ahí.
 ## 2. Estado actual
 
 Todo está implementado, tipado sin errores (`npm run check`), pasa
-`test:core`/`test:parser` (incluida una prueba actualizada que confirma el
-redondeo al bolívar entero: 2.748.532,50 → 2.748.533,00), se probó a mano
-en el navegador con datos reales (importando un Excel de prueba con un
-monto fraccionario: 1.564.989,22 se mostró correctamente como
-**1.564.990,00** en el modal de importación), está commiteado y pusheado a
-`origin/master`, y compilado en `release/CompPago-1.5.1-windows.zip`
+`test:core`/`test:parser`, se probó a mano en el navegador con datos reales
+(factura de un proveedor SIN nota de débito: antes no mostraba ninguna
+fecha, ahora muestra "Fecha de Factura 10/08/2026"; factura de un
+proveedor CON nota de débito: muestra ambas fechas en líneas separadas;
+nota de débito como documento aparte del mismo proveedor: confirmado que
+sigue igual, sin "Fecha de Factura"; título de la factura confirmado como
+"COMPROBANTE" sin "DE PAGO"), está commiteado y pusheado a
+`origin/master`, y compilado en `release/CompPago-1.5.2-windows.zip`
 (`npm run electron:build` completo).
 
-**Versión actual: `1.5.1`** (subida en esta tanda, ver sección 3).
+**Versión actual: `1.5.2`** (subida en esta tanda, ver sección 3).
 
 Últimos commits:
 
 ```
-(este commit) Redondea la ND al bolívar entero, no al céntimo; sube a 1.5.1
+(este commit) Muestra siempre la fecha de factura en la factura; título "COMPROBANTE"; sube a 1.5.2
+8d54813 Redondea la ND al bolívar entero, no al céntimo; sube a 1.5.1
 15c5650 Ajustes de contenido de la ND separada, redondeo hacia arriba, columna Generar ND; sube a 1.5.0
 d2efde1 Pestañas Comprobantes/ND, columnas Vista-Config-Comprobante, import de ND por Excel; sube a 1.4.0
 (anterior) Corrige espaciado del desglose por código en la ND; sube a 1.3.2
@@ -667,7 +670,7 @@ activado "Separar la nota de débito"):
   DE PAGO", ambas fechas, sigue con la leyenda "Flete: X Bs" dentro de su
   caja de ND).
 
-### Esta sesión: la ND redondea al bolívar entero, no al céntimo
+### Sesión anterior (8): la ND redondea al bolívar entero, no al céntimo
 
 El usuario reportó (con captura) que el monto de la ND seguía saliendo con
 centavos (ej. "1.564.989,78 Bs") después de la tanda anterior, donde ya se
@@ -694,6 +697,63 @@ sin céntimos, para que la factura salga en un monto limpio.
   "Bs. a Pagar x Dif." = 1.564.989,22 y el modal de importación mostró
   correctamente **1.564.990,00** (sin céntimos) antes de confirmar nada
   (se canceló el import de prueba para no ensuciar la base).
+
+### Esta sesión: la factura siempre muestra su "Fecha de Factura"; título "COMPROBANTE"
+
+El usuario pidió dos cosas sobre el comprobante de pago (factura, no la ND
+separada):
+
+1. **Que la factura muestre siempre su "Fecha de Factura"**, igual de
+   confiable que como la ND separada muestra su propia fecha. Se descubrió
+   la causa raíz al revisar el código: la fecha de factura que se imprime
+   hoy salía de `datos.notaDebito.fechaFactura` (o de
+   `notaDebitoCombinada.leche/transporte.fechaFactura`) — es decir, **solo
+   existía si el proveedor tenía una nota de débito configurada y
+   aplicable**. Un proveedor sin ND (la mayoría, en la práctica) no
+   mostraba ninguna fecha de factura en absoluto.
+2. **Quitar la palabra "PAGO" del título**: "COMPROBANTE DE PAGO" →
+   "COMPROBANTE" (solo en la factura; el título de la ND separada, ya
+   cambiado en una tanda anterior a "NOTA DE DEBITO", no se tocó).
+
+**Solución** (`src/core/receipt/comprobante.ts`,
+`comprobanteCombinado.ts`, `comprobanteAgrupado.ts`, `dibujo.ts`, y las
+pantallas que arman el contexto):
+- `DatosComprobante` y `ContextoComprobante` ganan un campo `fechaFactura`
+  nuevo, **independiente** de `notaDebito`/`notaDebitoCombinada` — viene
+  directo del campo "Fecha de factura" del panel "Fechas del documento"
+  (`fechas.factura` en el shell `Comprobantes.tsx`), no de la ND.
+  `construirComprobante` lo toma de `ctx.fechaFactura`;
+  `construirComprobanteCombinado` de `ctxLeche.fechaFactura` (el lado
+  leche manda, mismo criterio que ya usan folio/empresa/título ahí);
+  `construirComprobanteAgrupado` de `principal.ctx.fechaFactura`.
+  `SeccionComprobantesGenerales.tsx`/`SeccionNotasDebito.tsx` pasan
+  `fechaFactura: fechas.factura` tanto en `ctx` como en `ctxOtro` (la
+  nómina hermana no tiene su propio ajuste de fechas cargado en esta
+  pantalla, así que se usa el mismo valor configurado aquí como
+  aproximación razonable — es el caso común, ambas nóminas de la semana
+  comparten fecha de factura).
+- `dibujarBloqueIdentificacion` (dibujo.ts) se reordenó: ya no arma una
+  sola línea combinada "Fecha de Factura X · Fecha de Nota de débito Y"
+  condicionada a que hubiera ND. Ahora, si **no** es la ND separada
+  (`!soloFechaNota`), siempre imprime primero `Fecha de Factura
+  {datos.fechaFactura}` en su propia línea; después, si
+  `opciones.mostrarNotaDebito` y la ND aplica, añade una línea aparte
+  "Fecha de Nota de débito {fecha}" (con prefijo "Leche ·"/"Flete ·" si es
+  combinado) — ya no repite "Fecha de Factura" ahí. La ND separada
+  (`soloFechaNota`) sigue exactamente igual: solo su propia fecha, la de
+  factura no aplica a ese documento.
+- Título: `'COMPROBANTE DE PAGO'` → `'COMPROBANTE'` en la llamada desde
+  `dibujarComprobante`.
+- **Verificado de punta a punta con datos reales**: se cambió la "Fecha de
+  factura" del panel a una fecha distintiva (10/08/2026) y se descargaron
+  dos facturas del mismo proveedor de transporte real —una sin ND
+  ("DANY DARIO ZAMORA ROMERO"): antes no mostraba ninguna fecha, ahora
+  muestra "Fecha de Factura 10/08/2026" y título "COMPROBANTE"; otra con ND
+  ("BERNABE DE JESUS ANDRADE RON"): muestra "Fecha de Factura 10/08/2026"
+  y, en línea aparte, "Fecha de Nota de débito 04/08/2026" (la fecha
+  propia de esa ND importada, sin cambiar). Se descargó también la ND
+  separada de este último y se confirmó que sigue mostrando solo su fecha
+  propia, sin "Fecha de Factura" — no se rompió nada de la tanda anterior.
 
 ## 4. Intentos fallidos / notas técnicas
 

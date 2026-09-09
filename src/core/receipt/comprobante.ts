@@ -23,6 +23,9 @@ export interface DatosComprobante {
   numero: number;
   fechaIni: string;
   fechaFin: string;
+  /** Fecha de factura configurada en "Fechas del documento", independiente
+   * de si hay nota de débito aplicable — siempre visible en la factura. */
+  fechaFactura: string;
   fabricaCod: string;
   fabricaNom: string;
   proveedor: {
@@ -68,6 +71,9 @@ export interface ContextoComprobante {
    * que reemplaza el cálculo por tasas para ese código. Vacío en la
    * mayoría de las nóminas. */
   ndImportada: Map<string, { centimos: number; fechaNota: string }>;
+  /** Fecha de factura configurada en "Fechas del documento" para esta
+   * nómina — se imprime en la factura siempre, tenga o no ND aplicable. */
+  fechaFactura: string;
   titulo: string;
   tipo: TipoNomina;
   anio: number;
@@ -107,6 +113,7 @@ export function construirComprobante(
     numero: ctx.numero,
     fechaIni: ctx.fechaIni,
     fechaFin: ctx.fechaFin,
+    fechaFactura: ctx.fechaFactura,
     fabricaCod: registro.fabricaCod,
     fabricaNom: registro.fabricaNom,
     proveedor: {

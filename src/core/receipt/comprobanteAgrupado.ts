@@ -69,6 +69,7 @@ export function construirComprobanteAgrupado(
     numero: principal.ctx.numero,
     fechaIni: principal.ctx.fechaIni,
     fechaFin: principal.ctx.fechaFin,
+    fechaFactura: principal.ctx.fechaFactura,
     fabricaCod: principal.registro.fabricaCod,
     fabricaNom: principal.registro.fabricaNom,
     proveedor: {

@@ -69,6 +69,7 @@ export function construirComprobanteCombinado(
     numero: ctxLeche.numero,
     fechaIni: ctxLeche.fechaIni,
     fechaFin: ctxLeche.fechaFin,
+    fechaFactura: ctxLeche.fechaFactura,
     fabricaCod: registroLeche.fabricaCod,
     fabricaNom: registroLeche.fabricaNom,
     proveedor: {
