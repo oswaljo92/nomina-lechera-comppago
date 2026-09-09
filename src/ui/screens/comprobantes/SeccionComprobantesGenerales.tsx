@@ -460,7 +460,8 @@ export function SeccionComprobantesGenerales({
                 <th className="num">Nota de débito</th>
                 <th>Estado</th>
                 <th className="compacta" style={{ textAlign: 'right' }}>Vista</th>
-                <th className="compacta" style={{ width: 40, textAlign: 'right' }} title="Configuración">⚙</th>
+                <th className="compacta" style={{ width: 40, textAlign: 'right' }} title="Concepto manual">+</th>
+                <th className="compacta" style={{ width: 40, textAlign: 'right' }} title="Nota de débito">⚙</th>
                 <th style={{ textAlign: 'right' }}>Comprobante</th>
               </tr>
             </thead>
@@ -613,7 +614,17 @@ export function SeccionComprobantesGenerales({
                     <td className="acciones-celda compacta">
                       <button
                         className="btn sutil chico"
-                        title="Configurar concepto manual y nota de débito"
+                        title="Agregar concepto manual"
+                        disabled={!puedo('concepto-manual')}
+                        onClick={() => setDialogo({ tipo: 'manual', ids: [r.id] })}
+                      >
+                        +
+                      </button>
+                    </td>
+                    <td className="acciones-celda compacta">
+                      <button
+                        className="btn sutil chico"
+                        title="Configurar nota de débito"
                         onClick={() => irAConfiguracion(r.leido.codigo)}
                       >
                         ⚙
@@ -660,7 +671,7 @@ export function SeccionComprobantesGenerales({
                     }, 0),
                   )}
                 </td>
-                <td colSpan={4} />
+                <td colSpan={5} />
               </tr>
             </tfoot>
           </table>

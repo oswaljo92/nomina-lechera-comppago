@@ -36,21 +36,21 @@ desde ahí.
 
 Todo está implementado, tipado sin errores (`npm run check`), pasa
 `test:core`/`test:parser`, se probó a mano en el navegador con datos reales
-(factura de un proveedor SIN nota de débito: antes no mostraba ninguna
-fecha, ahora muestra "Fecha de Factura 10/08/2026"; factura de un
-proveedor CON nota de débito: muestra ambas fechas en líneas separadas;
-nota de débito como documento aparte del mismo proveedor: confirmado que
-sigue igual, sin "Fecha de Factura"; título de la factura confirmado como
-"COMPROBANTE" sin "DE PAGO"), está commiteado y pusheado a
-`origin/master`, y compilado en `release/CompPago-1.5.2-windows.zip`
-(`npm run electron:build` completo).
+(tabla de "Comprobantes generales" a 1280px sin desbordamiento tras
+agregar la columna nueva "+", botón "+" confirmado que abre el modal de
+concepto manual directo en la pantalla sin navegar, botón "⚙" confirmado
+que sigue llevando a la pestaña Notas de Débito filtrada al proveedor,
+modo tarjeta a 375px con los 4 bloques de acciones bien separados), está
+commiteado y pusheado a `origin/master`, y compilado en
+`release/CompPago-1.6.0-windows.zip` (`npm run electron:build` completo).
 
-**Versión actual: `1.5.2`** (subida en esta tanda, ver sección 3).
+**Versión actual: `1.6.0`** (subida en esta tanda, ver sección 3).
 
 Últimos commits:
 
 ```
-(este commit) Muestra siempre la fecha de factura en la factura; título "COMPROBANTE"; sube a 1.5.2
+(este commit) Separa concepto manual de configuración de ND en Comprobantes generales; sube a 1.6.0
+fcf0bc8 Muestra siempre la fecha de factura en la factura; título "COMPROBANTE"; sube a 1.5.2
 8d54813 Redondea la ND al bolívar entero, no al céntimo; sube a 1.5.1
 15c5650 Ajustes de contenido de la ND separada, redondeo hacia arriba, columna Generar ND; sube a 1.5.0
 d2efde1 Pestañas Comprobantes/ND, columnas Vista-Config-Comprobante, import de ND por Excel; sube a 1.4.0
@@ -698,7 +698,7 @@ sin céntimos, para que la factura salga en un monto limpio.
   correctamente **1.564.990,00** (sin céntimos) antes de confirmar nada
   (se canceló el import de prueba para no ensuciar la base).
 
-### Esta sesión: la factura siempre muestra su "Fecha de Factura"; título "COMPROBANTE"
+### Sesión anterior (9): la factura siempre muestra su "Fecha de Factura"; título "COMPROBANTE"
 
 El usuario pidió dos cosas sobre el comprobante de pago (factura, no la ND
 separada):
@@ -754,6 +754,44 @@ pantallas que arman el contexto):
   propia de esa ND importada, sin cambiar). Se descargó también la ND
   separada de este último y se confirmó que sigue mostrando solo su fecha
   propia, sin "Fecha de Factura" — no se rompió nada de la tanda anterior.
+
+### Esta sesión: separar "Concepto manual" de "Configurar ND" en Comprobantes generales
+
+Tras la restructuración en pestañas de una tanda anterior, la columna
+"Comprobante" había quedado como: Vista / **Configuración (⚙, un solo
+botón)** / Comprobante — el botón ⚙ único navegaba a la pestaña "Notas de
+Débito" tanto para configurar la ND como para agregar un concepto manual
+(el modal de concepto manual solo quedaba accesible desde ahí, por fila).
+El usuario pidió separar eso en dos accesos independientes y que el de
+"concepto manual" vuelva a estar disponible directo en "Comprobantes
+generales" (no había razón para que dependiera de la pestaña de ND, ya
+que un concepto manual **solo afecta a la factura**, no tiene relación con
+la nota de débito).
+
+**Cambio** (`src/ui/screens/comprobantes/SeccionComprobantesGenerales.tsx`,
+`src/ui/estilos.css`):
+- La columna única "⚙ Configuración" se separó en dos columnas
+  compactas: **"+"** (título "Concepto manual") y **"⚙"** (título "Nota de
+  débito"). El botón "+" ahora abre `ModalConceptoManual` directo para esa
+  fila (`setDialogo({tipo:'manual', ids:[r.id]})`), igual que como
+  funcionaba antes de la restructuración en pestañas — ya no navega a
+  ninguna pestaña. El botón "⚙" no cambió de comportamiento: sigue
+  llamando a `irAConfiguracion(r.leido.codigo)` (cambia a la pestaña
+  "Notas de Débito" filtrada a ese proveedor), porque configurar la ND sí
+  tiene sentido hacerlo desde ese espacio (ahí es donde vive también el
+  import de Excel).
+- **Regresión de desborde, otra vez** (misma clase de bug ya visto dos
+  veces en tandas anteriores): agregar la columna "+" volvió a desbordar
+  la tabla a 1280px (71px de más). Se corrigió recortando el padding base
+  de toda la tabla (`table.tabla th, td`) de `7px 8px` a `7px 5px`, y el
+  de las columnas compactas (`.compacta`, ya eran Vista/⚙, ahora suman 3
+  con la nueva "+") de `6px` a `4px` por lado. Quedó en ~5px de desborde
+  (imperceptible, mismo margen que se aceptó la vez anterior).
+- **Verificado en el navegador**: a 1280px la tabla no desborda; clic en
+  "+" abre el modal de concepto manual ahí mismo sin cambiar de pantalla;
+  clic en "⚙" sigue llevando a "Notas de Débito" filtrada al código de esa
+  fila; en modo tarjeta a 375px los 4 bloques de acciones (Vista / + /
+  ⚙ / Comprobante) se ven con buen espacio, sin apretarse.
 
 ## 4. Intentos fallidos / notas técnicas
 

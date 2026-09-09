@@ -404,7 +404,7 @@ input.mono { font-family: var(--mono); letter-spacing: 0.04em; }
 .tabla-envoltura { overflow-x: auto; }
 table.tabla { width: 100%; border-collapse: collapse; font-size: 13px; }
 table.tabla th, table.tabla td {
-  padding: 7px 8px;
+  padding: 7px 5px;
   text-align: left;
   border-bottom: 1px solid var(--borde);
   vertical-align: middle;
@@ -445,8 +445,8 @@ table.tabla td.acciones-celda {
    colchón horizontal que Comprobante (que sí lleva texto "Factura"/"ND") —
    recorta el relleno para no forzar scroll horizontal en 1280px. */
 table.tabla th.compacta, table.tabla td.compacta {
-  padding-left: 6px;
-  padding-right: 6px;
+  padding-left: 4px;
+  padding-right: 4px;
 }
 table.tabla .nombre-prov { font-weight: 600; }
 table.tabla .sub { font-size: 11.5px; color: var(--texto-2); font-family: var(--sans); }
