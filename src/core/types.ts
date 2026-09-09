@@ -190,6 +190,9 @@ export interface ParametrosNotaDebito {
 
 export interface NotaDebitoCalculada {
   aplica: true;
+  /** Ausente o 'calculado' = por tasas BCV (de siempre); 'importado' = viene
+   * de un Excel externo y reemplaza el cálculo (ver NotaDebitoImportada). */
+  origen?: 'calculado' | 'importado';
   precioUsd: number;
   litrosBase: number;
   fechaFactura: string;
@@ -358,4 +361,38 @@ export interface VerificacionBitacora {
 export interface TasaBcv {
   fecha: string; // ISO
   tasa: number; // Bs por dólar
+}
+
+// ─────────────────────────────────────────────────────────────
+// Notas de débito importadas de Excel
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Fila de un Excel externo con la ND ya calculada, ya persistida (emparejada
+ * a un registro cargado, o pendiente de emparejar a mano). Cuando queda
+ * emparejada, su `centimos` reemplaza por completo el cálculo automático por
+ * tasas BCV para ese registro (ver `resolverNotaDebito` en calcular.ts).
+ */
+export interface NotaDebitoImportada {
+  id: string;
+  nominaId: string;
+  /** null mientras esté pendiente de emparejar a mano. */
+  registroId: string | null;
+  tipo: TipoNomina;
+  /** Código tal como vino en el Excel (sin normalizar), p.ej. "9119". */
+  codigoExcel: string;
+  proveedorExcel: string;
+  fabricaExcel: string | null;
+  sapExcel: string | null;
+  fechaNota: string; // ISO
+  litrosEnviados: number | null;
+  litrosTransportados: number | null;
+  precioUsdLts: number | null;
+  precioUsdFlete: number | null;
+  bsXLtsInicio: number | null;
+  bsXLtsAjustado: number | null;
+  difXLts: number | null;
+  /** "Bs. a Pagar x Dif." del Excel, en céntimos. */
+  centimos: number;
+  emparejamiento: 'codigo' | 'nombre' | 'manual' | 'pendiente';
 }

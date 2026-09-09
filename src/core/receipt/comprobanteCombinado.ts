@@ -1,4 +1,4 @@
-import { calcularNotaDebito, calcularRegistro } from '../calc/calcular.ts';
+import { calcularRegistro, resolverNotaDebito } from '../calc/calcular.ts';
 import type {
   ConceptoManual,
   NotaDebitoCombinada,
@@ -32,17 +32,22 @@ export function construirComprobanteCombinado(
     null,
   );
 
-  const ndLeche = paramsNdLeche
-    ? calcularNotaDebito(paramsNdLeche, registroLeche.litrosTotal, ctxLeche.fechaIni, ctxLeche.tasas)
-    : null;
-  const ndTransporte = paramsNdTransporte
-    ? calcularNotaDebito(
-        paramsNdTransporte,
-        registroTransporte.litrosTotal,
-        ctxTransporte.fechaIni,
-        ctxTransporte.tasas,
-      )
-    : null;
+  const ndLeche = resolverNotaDebito(
+    registroLeche.codigo,
+    paramsNdLeche,
+    registroLeche.litrosTotal,
+    ctxLeche.fechaIni,
+    ctxLeche.tasas,
+    ctxLeche.ndImportada,
+  );
+  const ndTransporte = resolverNotaDebito(
+    registroTransporte.codigo,
+    paramsNdTransporte,
+    registroTransporte.litrosTotal,
+    ctxTransporte.fechaIni,
+    ctxTransporte.tasas,
+    ctxTransporte.ndImportada,
+  );
 
   const notaDebitoCombinada: NotaDebitoCombinada | undefined =
     ndLeche || ndTransporte

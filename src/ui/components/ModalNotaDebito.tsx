@@ -37,6 +37,7 @@ export function ModalNotaDebito({
   fechaNota,
   tasas,
   preciosGuardados,
+  codigosImportados,
   alCerrar,
   alAceptar,
   alQuitar,
@@ -47,6 +48,9 @@ export function ModalNotaDebito({
   fechaNota: string;
   tasas: Map<string, number>;
   preciosGuardados: Map<string, number>;
+  /** Códigos que ya tienen una ND importada de Excel: el documento final
+   * usará ese valor sin importar lo que se configure aquí. */
+  codigosImportados?: Set<string>;
   alCerrar: () => void;
   alAceptar: (resultado: ResultadoModalNd) => void;
   alQuitar: () => void;
@@ -149,6 +153,14 @@ export function ModalNotaDebito({
         </>
       }
     >
+      {codigosImportados && registros.some((r) => codigosImportados.has(r.leido.codigo)) && (
+        <Aviso nivel="info" titulo="Algunos ya tienen una ND importada de Excel">
+          {registros.filter((r) => codigosImportados.has(r.leido.codigo)).length} de {registros.length}{' '}
+          proveedores seleccionados ya tienen una nota de débito importada desde la pestaña «Notas de
+          Débito»; el documento final usará ese valor, sin importar lo que configures aquí.
+        </Aviso>
+      )}
+
       {faltanTasas.length > 0 && (
         <Aviso nivel="error" titulo="Faltan tasas del BCV">
           No hay tasa cargada para {faltanTasas.map(fechaAMostrar).join(' y ')}. Cárgalas en la

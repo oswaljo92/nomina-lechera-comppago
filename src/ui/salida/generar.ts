@@ -337,12 +337,18 @@ export async function empaquetarZip(archivos: ArchivoGenerado[]): Promise<Blob> 
   });
 }
 
-/** Vista previa: se genera el PNG real, así que muestra el resultado exacto. */
+/** Vista previa: se genera el PNG real, así que muestra el resultado exacto.
+ * `cual` decide si se dibuja la factura completa o la nota de débito como
+ * documento aparte. */
 export async function previsualizar(
   datos: DatosComprobante,
   opciones: OpcionesDibujo,
+  cual: 'factura' | 'nd' = 'factura',
 ): Promise<string> {
-  const hoja = dibujarComprobante(datos, opciones, crearMedidor());
+  const hoja =
+    cual === 'nd'
+      ? dibujarNotaDebito(datos, opciones, crearMedidor())
+      : dibujarComprobante(datos, opciones, crearMedidor());
   // Escala menor: en pantalla no hace falta calidad de impresión.
   return URL.createObjectURL(await aPng(hoja, 2));
 }

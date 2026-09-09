@@ -29,9 +29,16 @@ import {
 import { puede } from '../src/core/auth/permisos.ts';
 import { paginasDesdePdf, type DocumentoPdf } from '../src/core/parser/desdePdfjs.ts';
 import { parseNomina } from '../src/core/parser/parseNomina.ts';
-import { calcularNotaDebito, calcularRegistro, bsAUsd, usdABs } from '../src/core/calc/calcular.ts';
+import {
+  calcularNotaDebito,
+  calcularRegistro,
+  resolverNotaDebito,
+  bsAUsd,
+  usdABs,
+} from '../src/core/calc/calcular.ts';
 import { construirComprobanteAgrupado } from '../src/core/receipt/comprobanteAgrupado.ts';
-import type { ContextoComprobante } from '../src/core/receipt/comprobante.ts';
+import { construirComprobante, type ContextoComprobante } from '../src/core/receipt/comprobante.ts';
+import { normalizarCodigo } from '../src/core/db/notaDebitoExcel.ts';
 import { sha256DeBytes } from '../src/core/auth/hash.ts';
 import {
   formatearBs,
@@ -529,6 +536,7 @@ console.log(`\n${B}Agrupación del mismo tipo${N}`);
     empresaPorFabrica: (cod) => repo.empresaDeFabrica(db, cod),
     nombreCompleto: () => undefined,
     tasas: repo.tasasMapa(db),
+    ndImportada: new Map(),
     titulo: 'PAGO DE LECHE FRESCA',
     tipo: 'leche',
     anio: leche.anio,
@@ -577,6 +585,69 @@ console.log(`\n${B}Agrupación del mismo tipo${N}`);
     'No deja agrupar un código ya vinculado cruzado (exclusión mutua)',
   );
   await repo.desvincularProveedor(db, admin, otroLeche.leido.codigo, rutaLibre.leido.codigo);
+}
+
+// ═══ Nota de débito importada ═══
+console.log(`\n${B}Nota de débito importada${N}`);
+{
+  ok(normalizarCodigo('9119') === normalizarCodigo('009119'), 'Normaliza ceros a la izquierda');
+  ok(normalizarCodigo('569') !== normalizarCodigo('5690'), 'No confunde códigos de distinto valor');
+  ok(normalizarCodigo('000000') === '0', 'Un código de puros ceros no rompe (cae a "0")');
+
+  const tasasVacias = new Map<string, number>();
+  const sinImport = new Map<string, { centimos: number; fechaNota: string }>();
+  const conImport = new Map([[prolamar.leido.codigo, { centimos: 123456, fechaNota: '2026-08-04' }]]);
+
+  const resultadoSinImport = resolverNotaDebito(
+    prolamar.leido.codigo,
+    null,
+    prolamar.leido.litrosTotal,
+    leche.fechaIni,
+    tasasVacias,
+    sinImport,
+  );
+  ok(resultadoSinImport === null, 'Sin params ni import, no hay nada que resolver');
+
+  const resultadoImportado = resolverNotaDebito(
+    prolamar.leido.codigo,
+    null,
+    prolamar.leido.litrosTotal,
+    leche.fechaIni,
+    tasasVacias,
+    conImport,
+  );
+  ok(
+    resultadoImportado?.aplica === true && resultadoImportado.centimos === 123456,
+    'El import gana aunque no haya params ni tasas configuradas',
+  );
+  ok(
+    resultadoImportado?.aplica === true && resultadoImportado.origen === 'importado',
+    'Queda marcado con origen "importado"',
+  );
+
+  const ctxImportado: ContextoComprobante = {
+    catalogo: repo.catalogoMapa(db),
+    empresaPorFabrica: (cod) => repo.empresaDeFabrica(db, cod),
+    nombreCompleto: () => undefined,
+    tasas: repo.tasasMapa(db),
+    ndImportada: conImport,
+    titulo: 'PAGO DE LECHE FRESCA',
+    tipo: 'leche',
+    anio: leche.anio,
+    numero: leche.numero,
+    fechaIni: leche.fechaIni,
+    fechaFin: leche.fechaFin,
+  };
+  const comprobanteImportado = construirComprobante(
+    prolamar.leido,
+    prolamar.manuales,
+    prolamar.notaDebito,
+    ctxImportado,
+  );
+  ok(
+    comprobanteImportado.notaDebito?.aplica === true && comprobanteImportado.notaDebito.centimos === 123456,
+    'construirComprobante usa el override importado de punta a punta',
+  );
 }
 
 // ═══ Borrado ═══

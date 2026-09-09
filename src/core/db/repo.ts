@@ -12,6 +12,7 @@ import type {
   Empresa,
   LitrosDia,
   NominaLeida,
+  NotaDebitoImportada,
   ParametrosNotaDebito,
   RegistroLeido,
   TasaBcv,
@@ -1143,4 +1144,172 @@ export async function descartarCandidatoGrupoMismoTipo(
     tipo,
     documento,
   });
+}
+
+// ─────────────────────────────────────────────────────────────
+// Notas de débito importadas de Excel
+// ─────────────────────────────────────────────────────────────
+
+function aNotaDebitoImportada(f: Fila): NotaDebitoImportada {
+  return {
+    id: String(f['id']),
+    nominaId: String(f['nomina_id']),
+    registroId: typeof f['registro_id'] === 'string' ? f['registro_id'] : null,
+    tipo: String(f['tipo']) as TipoNomina,
+    codigoExcel: String(f['codigo_excel']),
+    proveedorExcel: String(f['proveedor_excel']),
+    fabricaExcel: typeof f['fabrica_excel'] === 'string' ? f['fabrica_excel'] : null,
+    sapExcel: typeof f['sap_excel'] === 'string' ? f['sap_excel'] : null,
+    fechaNota: String(f['fecha_nota']),
+    litrosEnviados: f['litros_enviados'] === null ? null : Number(f['litros_enviados']),
+    litrosTransportados: f['litros_transportados'] === null ? null : Number(f['litros_transportados']),
+    precioUsdLts: f['precio_usd_lts'] === null ? null : Number(f['precio_usd_lts']),
+    precioUsdFlete: f['precio_usd_flete'] === null ? null : Number(f['precio_usd_flete']),
+    bsXLtsInicio: f['bs_x_lts_inicio'] === null ? null : Number(f['bs_x_lts_inicio']),
+    bsXLtsAjustado: f['bs_x_lts_ajustado'] === null ? null : Number(f['bs_x_lts_ajustado']),
+    difXLts: f['dif_x_lts'] === null ? null : Number(f['dif_x_lts']),
+    centimos: Number(f['centimos']),
+    emparejamiento: String(f['emparejamiento']) as NotaDebitoImportada['emparejamiento'],
+  };
+}
+
+export function notasDebitoImportadasDeNomina(db: BaseDatos, nominaId: string): NotaDebitoImportada[] {
+  return db
+    .todos<Fila>('SELECT * FROM notas_debito_importadas WHERE nomina_id = ? ORDER BY creado_en', [
+      nominaId,
+    ])
+    .map(aNotaDebitoImportada);
+}
+
+/** Código de registro -> override importado, solo de las filas ya
+ * emparejadas de esta nómina. Para inyectar en ContextoComprobante.ndImportada. */
+export function ndImportadaMapa(
+  db: BaseDatos,
+  nominaId: string,
+): Map<string, { centimos: number; fechaNota: string }> {
+  const filas = db.todos<Fila>(
+    `SELECT r.codigo AS codigo, ndi.centimos AS centimos, ndi.fecha_nota AS fecha_nota
+     FROM notas_debito_importadas ndi
+     JOIN registros r ON r.id = ndi.registro_id
+     WHERE ndi.nomina_id = ? AND ndi.registro_id IS NOT NULL`,
+    [nominaId],
+  );
+  return new Map(
+    filas.map((f) => [String(f['codigo']), { centimos: Number(f['centimos']), fechaNota: String(f['fecha_nota']) }]),
+  );
+}
+
+export interface FilaNdImportadaAGuardar {
+  /** Nómina "dueña" de la fila: la del registro emparejado (puede ser la
+   * nómina hermana, si el Excel trae también filas del otro tipo), o la
+   * nómina que se estaba viendo al importar, mientras esté pendiente. */
+  nominaId: string;
+  registroId: string | null;
+  tipo: TipoNomina;
+  codigoExcel: string;
+  proveedorExcel: string;
+  fabricaExcel: string | null;
+  sapExcel: string | null;
+  fechaNota: string;
+  litrosEnviados: number | null;
+  litrosTransportados: number | null;
+  precioUsdLts: number | null;
+  precioUsdFlete: number | null;
+  bsXLtsInicio: number | null;
+  bsXLtsAjustado: number | null;
+  difXLts: number | null;
+  centimos: number;
+  emparejamiento: 'codigo' | 'nombre' | 'pendiente';
+}
+
+/** Guarda en lote una importación ya confirmada (filas emparejadas y
+ * pendientes). Secuencial dentro de una transacción, como guardarNotaDebito,
+ * por la bitácora encadenada. */
+export async function guardarNotasDebitoImportadas(
+  db: BaseDatos,
+  autor: Autor,
+  sesionNominaId: string,
+  filas: FilaNdImportadaAGuardar[],
+): Promise<void> {
+  await db.transaccionAsync(async () => {
+    const ahora = new Date().toISOString();
+    for (const f of filas) {
+      db.correr(
+        `INSERT INTO notas_debito_importadas
+           (id, nomina_id, registro_id, tipo, codigo_excel, proveedor_excel, fabrica_excel, sap_excel,
+            fecha_nota, litros_enviados, litros_transportados, precio_usd_lts, precio_usd_flete,
+            bs_x_lts_inicio, bs_x_lts_ajustado, dif_x_lts, centimos, emparejamiento,
+            usuario_id, creado_en, actualizado_en)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(registro_id) WHERE registro_id IS NOT NULL DO UPDATE SET
+           codigo_excel = excluded.codigo_excel,
+           proveedor_excel = excluded.proveedor_excel,
+           fabrica_excel = excluded.fabrica_excel,
+           sap_excel = excluded.sap_excel,
+           fecha_nota = excluded.fecha_nota,
+           litros_enviados = excluded.litros_enviados,
+           litros_transportados = excluded.litros_transportados,
+           precio_usd_lts = excluded.precio_usd_lts,
+           precio_usd_flete = excluded.precio_usd_flete,
+           bs_x_lts_inicio = excluded.bs_x_lts_inicio,
+           bs_x_lts_ajustado = excluded.bs_x_lts_ajustado,
+           dif_x_lts = excluded.dif_x_lts,
+           centimos = excluded.centimos,
+           emparejamiento = excluded.emparejamiento,
+           actualizado_en = excluded.actualizado_en`,
+        [
+          nuevoId('ndi_'),
+          f.nominaId,
+          f.registroId,
+          f.tipo,
+          f.codigoExcel,
+          f.proveedorExcel,
+          f.fabricaExcel,
+          f.sapExcel,
+          f.fechaNota,
+          f.litrosEnviados,
+          f.litrosTransportados,
+          f.precioUsdLts,
+          f.precioUsdFlete,
+          f.bsXLtsInicio,
+          f.bsXLtsAjustado,
+          f.difXLts,
+          f.centimos,
+          f.emparejamiento,
+          autor.id,
+          ahora,
+          ahora,
+        ],
+      );
+    }
+    await registrarBitacora(db, autor, 'importar-nota-debito', 'nomina', sesionNominaId, {
+      filas: filas.length,
+      emparejadas: filas.filter((f) => f.registroId !== null).length,
+      pendientes: filas.filter((f) => f.registroId === null).length,
+    });
+  });
+}
+
+/** Resolución manual de una fila pendiente: le asigna un registro y pasa a
+ * emparejamiento 'manual'. */
+export async function resolverNotaDebitoImportada(
+  db: BaseDatos,
+  autor: Autor,
+  id: string,
+  registroId: string,
+): Promise<void> {
+  const registro = db.uno<Fila>('SELECT nomina_id FROM registros WHERE id = ?', [registroId]);
+  if (!registro) throw new Error('El registro elegido no existe.');
+  db.correr(
+    `UPDATE notas_debito_importadas
+     SET registro_id = ?, nomina_id = ?, emparejamiento = 'manual', actualizado_en = ?
+     WHERE id = ?`,
+    [registroId, String(registro['nomina_id']), new Date().toISOString(), id],
+  );
+  await registrarBitacora(db, autor, 'resolver-nota-debito-importada', 'registro', registroId, { id });
+}
+
+export async function eliminarNotaDebitoImportada(db: BaseDatos, autor: Autor, id: string): Promise<void> {
+  db.correr('DELETE FROM notas_debito_importadas WHERE id = ?', [id]);
+  await registrarBitacora(db, autor, 'eliminar-nota-debito-importada', 'nota_debito_importada', id, {});
 }

@@ -255,4 +255,40 @@ CREATE TABLE IF NOT EXISTS ajustes (
   clave TEXT PRIMARY KEY,
   valor TEXT NOT NULL
 );
+
+-- Notas de débito importadas desde un Excel externo (ya con el cálculo
+-- hecho): cuando queda emparejada a un registro, ESA reemplaza por completo
+-- el cálculo automático por tasas BCV para ese proveedor/semana. Puede haber
+-- filas pendientes (registro_id NULL) mientras el emparejamiento automático
+-- por código/nombre no encontró un registro y el usuario no lo resolvió a
+-- mano todavía. Se guardan también las columnas crudas del Excel para
+-- auditoría/consulta visual, aunque solo centimos participa en el cálculo.
+CREATE TABLE IF NOT EXISTS notas_debito_importadas (
+  id                    TEXT PRIMARY KEY,
+  nomina_id             TEXT NOT NULL REFERENCES nominas(id) ON DELETE CASCADE,
+  registro_id           TEXT REFERENCES registros(id) ON DELETE CASCADE,
+  tipo                  TEXT NOT NULL CHECK (tipo IN ('leche','transporte')),
+  codigo_excel          TEXT NOT NULL,
+  proveedor_excel       TEXT NOT NULL,
+  fabrica_excel         TEXT,
+  sap_excel             TEXT,
+  fecha_nota            TEXT NOT NULL,
+  litros_enviados       INTEGER,
+  litros_transportados  INTEGER,
+  precio_usd_lts        REAL,
+  precio_usd_flete      REAL,
+  bs_x_lts_inicio       REAL,
+  bs_x_lts_ajustado     REAL,
+  dif_x_lts             REAL,
+  centimos              INTEGER NOT NULL,
+  emparejamiento        TEXT NOT NULL CHECK (emparejamiento IN ('codigo','nombre','manual','pendiente')),
+  usuario_id            TEXT NOT NULL,
+  creado_en             TEXT NOT NULL,
+  actualizado_en        TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ndi_nomina ON notas_debito_importadas(nomina_id);
+-- Un registro solo puede tener UNA nota de débito importada vigente. SQLite
+-- no cuenta NULLs como duplicados, así que las filas pendientes no chocan.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ndi_registro_unico
+  ON notas_debito_importadas(registro_id) WHERE registro_id IS NOT NULL;
 `;

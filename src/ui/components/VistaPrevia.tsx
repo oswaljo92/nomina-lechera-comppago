@@ -13,9 +13,11 @@ import type { OpcionesDibujo } from '../../core/receipt/dibujo.ts';
 export function VistaPrevia({
   datos,
   opciones,
+  cual = 'factura',
 }: {
   datos: DatosComprobante;
   opciones: OpcionesDibujo;
+  cual?: 'factura' | 'nd';
 }) {
   const [url, setUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -25,7 +27,7 @@ export function VistaPrevia({
     let vivo = true;
     let creada: string | null = null;
 
-    void previsualizar(datos, opciones)
+    void previsualizar(datos, opciones, cual)
       .then((nueva) => {
         creada = nueva;
         if (vivo) setUrl(nueva);
@@ -39,7 +41,7 @@ export function VistaPrevia({
       vivo = false;
       if (creada) URL.revokeObjectURL(creada);
     };
-  }, [datos, opciones]);
+  }, [datos, opciones, cual]);
 
   if (error) {
     return (

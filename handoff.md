@@ -20,28 +20,38 @@ proveedores agrupados, dos ajustes de tabla (desbordamiento horizontal en
 escritorio, espaciado en tarjeta móvil), y la última tanda: un bug real de
 espaciado en la Nota de Débito de un grupo (el desglose por código quedaba
 pegado al borde de la caja verde), confirmado también con datos reales de
-transporte (no solo leche).
+transporte (no solo leche), y la última tanda: la tabla de Comprobantes se
+dividió en dos pestañas ("Comprobantes generales" / "Notas de Débito"), la
+columna de acciones se separó en tres (Vista, Configuración, Comprobante)
+para que los botones se alineen bien en todos los tamaños de pantalla, y se
+agregó la importación de notas de débito ya calculadas desde un Excel
+externo (empareja por código o por nombre con lo ya cargado y reemplaza el
+cálculo automático por tasas BCV).
 
 ## 2. Estado actual
 
 Todo está implementado, tipado sin errores (`npm run check`), pasa
-`test:core`/`test:parser` (incluidas pruebas de la agrupación mismo tipo:
-suma correcta, exclusión mutua con vínculos cruzados, disolución de
-grupo), se probó a mano en el navegador con datos reales de `entradas/`
-tanto de leche como de **transporte** (candidato de agrupación real
-detectado y confirmado en ambos tipos, factura y ND separadas descargadas
-y leídas, desglose por código verificado en ambos documentos, interruptor
-de separar ND verificado persistente tras recargar, botón "ND" confirmado
-visible en un proveedor agrupado, tabla sin desbordamiento a 1280px),
-está commiteado y pusheado a `origin/master`, y compilado en
-`release/CompPago-1.3.2-windows.zip` (`npm run electron:build` completo).
+`test:core`/`test:parser` (incluidas pruebas nuevas de normalización de
+código y del override por import: gana aunque no haya tasas ni params
+configurados, queda marcado `origen: 'importado'`, y se verificó de punta a
+punta con `construirComprobante`), se probó a mano en el navegador con
+datos reales de `entradas/` (nómina de transporte real cargada, Excel de
+prueba con 3 filas: 1 emparejada por código, 1 por nombre, 1 sin emparejar
+resuelta a mano, resolución verificada persistente tras recargar, factura y
+ND descargadas y leídas confirmando que el monto importado reemplaza el
+cálculo por tasas y que NO se imprime ninguna tasa/precio inventado, tabla
+de escritorio sin desbordamiento a 1280px, tarjetas móviles a 375px con las
+3 columnas nuevas en bloques separados), está commiteado y pusheado a
+`origin/master`, y compilado en `release/CompPago-1.4.0-windows.zip`
+(`npm run electron:build` completo).
 
-**Versión actual: `1.3.2`** (subida en esta tanda, ver sección 3).
+**Versión actual: `1.4.0`** (subida en esta tanda, ver sección 3).
 
 Últimos commits:
 
 ```
-(este commit) Corrige espaciado del desglose por código en la ND; sube a 1.3.2
+(este commit) Pestañas Comprobantes/ND, columnas Vista-Config-Comprobante, import de ND por Excel; sube a 1.4.0
+(anterior) Corrige espaciado del desglose por código en la ND; sube a 1.3.2
 f61f0d7 Corrige boton ND en agrupados y ajustes de tabla (desborde/espaciado); sube a 1.3.1
 c4bb01c Interruptor unir/separar ND, agrupación de códigos del mismo tipo, selector de formato único; sube a 1.3.0
 ```
@@ -418,7 +428,7 @@ concepto manual hay que mirar la vista previa/PDF, no la tabla de la lista.
   que no es parte de esta queja). Verificado en el navegador a 375px: no
   hay overflow horizontal ni recorte, solo más aire vertical.
 
-### Esta sesión
+### Sesión anterior (5): verificación con transporte real, espaciado del desglose en la ND
 
 **Verificado con datos reales de transporte, no solo leche**
 - El usuario pidió confirmar que la agrupación del mismo tipo funciona
@@ -459,6 +469,145 @@ verde** (`src/core/receipt/dibujo.ts`)
   herramienta `Read` decide cómo interpretar el archivo por su extensión,
   no por el contenido.
 
+### Esta sesión: pestañas Comprobantes/ND, columnas Vista-Config-Comprobante, import de ND por Excel
+
+El usuario pidió tres cosas relacionadas: (1) que la tabla de Comprobantes
+tenga una columna "Vista" (ver factura / ver ND por separado) y una columna
+"Configuración" (acceso a ND y conceptos manuales por proveedor), dejando la
+columna "Comprobante" solo con las descargas y bien alineada en todos los
+tamaños de pantalla; (2) una pestaña nueva "Notas de Débito" dentro de
+Comprobantes (la tabla actual pasa a llamarse "Comprobantes generales")
+para importar un Excel con la ND ya calculada y evitar transcribir precios
+a mano; (3) que ese Excel traiga una columna "Código de Proveedor" nueva
+(el mismo código que ya existe en los GAN, ej. `009119`, pero sin los ceros
+a la izquierda) para emparejar automáticamente con lo ya cargado.
+
+**Restructuración de `Comprobantes.tsx` en pestañas** — el archivo (antes
+1018 líneas, un solo componente) se dividió en tres:
+- `src/ui/screens/Comprobantes.tsx`: shell fino, mantiene lo compartido por
+  las dos pestañas (nómina seleccionada, formato, opciones de contenido del
+  PDF —incluida `separarNd`—, fechas del documento) y el estado de qué
+  pestaña está activa.
+- `src/ui/screens/comprobantes/SeccionComprobantesGenerales.tsx` (nuevo):
+  toda la tabla de siempre, funcionalmente igual, con el split de columnas
+  descrito abajo.
+- `src/ui/screens/comprobantes/SeccionNotasDebito.tsx` (nuevo): la pestaña
+  de importación de Excel.
+- Las pestañas reusan el patrón `.pestanas`/`useState<Pestana>` que ya
+  existía en `Ajustes.tsx` (no se inventó nada nuevo de CSS para esto).
+
+**Columnas Vista / Configuración / Comprobante**
+(`SeccionComprobantesGenerales.tsx`, `estilos.css`)
+- La columna "Comprobante" (5 botones: 👁, +, $, Factura, ND) se partió en
+  tres: "Vista" (👁 ver factura, 🧾 ver ND — reemplaza al 👁 combinado de
+  antes), "Config." (⚙, lleva a la pestaña Notas de Débito filtrada a ese
+  proveedor) y "Comprobante" (solo Factura/ND, las descargas).
+- **Regresión encontrada y corregida en el momento**: agregar 2 columnas
+  nuevas volvió a desbordar la tabla a 1280px (163px de más), el mismo tipo
+  de problema ya resuelto una vez para la columna única. Se corrigió en
+  capas: encabezado "⚙" en vez de "Configuración" (ahorra ~70px), botones
+  de Vista sin texto (👁/🧾 en vez de "👁 Factura"/"👁 ND"), y una clase CSS
+  nueva `.compacta` (padding 6px en vez de 10px) para las columnas de solo
+  ícono, más reducir el padding base de la tabla de `7px 10px` a `7px 8px`.
+  Verificado con `scrollWidth - clientWidth` en el navegador: quedó en 2px
+  (imperceptible, antes eran 163px).
+- El botón "⚙" apunta a `irAConfiguracion(codigo)` en el shell, que cambia
+  de pestaña y precarga el buscador de "Notas de Débito" con ese código —
+  ahí la fila del proveedor sigue teniendo los botones "+ Concepto"/"$ ND
+  manual" de siempre (mismos modales `ModalConceptoManual`/`ModalNotaDebito`,
+  sin cambios), para no perder ninguna función.
+
+**Nota de débito importada de Excel** — mecanismo nuevo y automático: una
+vez que una fila del Excel queda emparejada a un registro, su monto
+reemplaza por completo el cálculo por tasas BCV para ese proveedor/semana,
+sin ningún interruptor por proveedor.
+- `src/core/db/esquema.ts`: tabla nueva `notas_debito_importadas` (aditiva,
+  sin subir `VERSION_ESQUEMA`), 1 fila por código del Excel, `registro_id`
+  nullable (pendiente de emparejar a mano) con índice único parcial
+  (`WHERE registro_id IS NOT NULL`) para que un registro no reciba dos
+  imports. Guarda también las columnas crudas del Excel (fábrica, SAP,
+  litros, precios) para auditoría, aunque solo `centimos` participa en el
+  cálculo.
+- `src/core/db/notaDebitoExcel.ts` (nuevo): `leerLibroNotasDebitoImportadas`,
+  mismo patrón que `tasasExcel.ts`. El tipo de cada fila (leche/transporte)
+  se infiere de cuál columna de litros trae dato. Emparejamiento: primero
+  por **código normalizado** (`normalizarCodigo`: quita todo lo no numérico
+  y los ceros a la izquierda en ambos lados — `"9119"` ~ `"009119"`), si no
+  calza por **nombre** (tolerando el truncado a ~30 caracteres del PDF); si
+  ninguno o hay ambigüedad, `'sin-emparejar'`.
+- `src/core/calc/calcular.ts`: `resolverNotaDebito(codigo, params, litros,
+  fechaIniSemana, tasas, ndImportada)` — si hay import para ese código lo
+  devuelve directo (sin mirar tasas/params/litros), si no cae a
+  `calcularNotaDebito` de siempre. Sustituye a `calcularNotaDebito` en los 3
+  constructores (`comprobante.ts`, `comprobanteCombinado.ts` una vez por
+  lado, `comprobanteAgrupado.ts` una vez por código) — cada uno recibe el
+  override vía un nuevo campo `ContextoComprobante.ndImportada: Map<codigo,
+  {centimos, fechaNota}>`. `ModalNotaDebito.tsx` (el editor manual) se dejó
+  intacto pero gana un aviso: "N de M proveedores ya tienen ND importada,
+  el documento final usará ese valor".
+- `NotaDebitoCalculada` ganó un campo opcional `origen?: 'calculado' |
+  'importado'`. **Importante para el dibujo**: un import no tiene
+  tasaIni/tasaFin/precioUsd reales, así que `dibujarDetalleNd` (dibujo.ts)
+  ahora excluye del cuadro SERV/LITROS/PRECIO/TASA cualquier línea con
+  `origen === 'importado'` (para no imprimir tasas inventadas), pero la
+  mantiene en el desglose de montos por código/lado (con un caso especial
+  agregado: si solo hay 1 fuente aplicable y es importada, igual se muestra
+  como línea de desglose, porque antes esa rama solo aparecía con 2+
+  fuentes).
+- `src/core/db/repo.ts`: `notasDebitoImportadasDeNomina`, `ndImportadaMapa`,
+  `guardarNotasDebitoImportadas` (lote, secuencial dentro de una
+  transacción, como `guardarTasa`/`guardarNotaDebito`, por la bitácora
+  encadenada), `resolverNotaDebitoImportada` (emparejamiento manual — ojo:
+  también corrige `nomina_id` de la fila a la del registro elegido, no se
+  queda con la nómina donde se subió el Excel), `eliminarNotaDebitoImportada`.
+  Ninguna llama a `cambiado()` — eso lo hace siempre la UI que las invoca.
+- **Diseño para Excel mixto (leche+transporte en el mismo archivo)**: el
+  Excel real del usuario trae filas de ambos tipos a la vez (columna
+  "Litros Enviados" vs "Litros Transportados"). El emparejamiento busca
+  candidatos tanto en la nómina actualmente abierta como en su "nómina
+  hermana" (mismo año/semana, tipo opuesto, si está cargada) — igual que ya
+  hace el mecanismo de vínculos cruzados. Cada fila importada guarda el
+  `nomina_id` real del registro con el que quedó (no el de la pestaña donde
+  se subió el archivo), para que abrir la pestaña "Notas de Débito" de
+  CUALQUIERA de las dos nóminas muestre sus filas correctas.
+- UI: `ModalImportarNotaDebito.tsx` (nuevo, patrón de `ModalImportarTasas`
+  de Tasas.tsx) clasifica en Por código / Por nombre / Sin emparejar antes
+  de confirmar. `ModalResolverNotaDebito.tsx` (nuevo) deja elegir a mano el
+  registro correcto para una fila sin emparejar (excluye los registros que
+  ya tienen otra ND importada asignada).
+- **Bug real encontrado y corregido durante la prueba**: en la tabla de la
+  pestaña "Notas de Débito", los litros mostrados venían de
+  `f.litrosEnviados ?? f.litrosTransportados ?? 0` — como `??` solo cae al
+  siguiente valor si el de la izquierda es `null`/`undefined` (no si es
+  `0`), una fila de transporte con `litrosEnviados: 0` (el valor por
+  defecto para la columna que no le corresponde) siempre mostraba `0` en
+  vez de sus litros reales. Corregido eligiendo explícitamente por `tipo`:
+  `f.tipo === 'leche' ? f.litrosEnviados : f.litrosTransportados`.
+- **Verificado de punta a punta con datos reales**: se cargó la nómina de
+  transporte real (`entradas/GAN0594_4.pdf`, inyectando los PDF vía
+  `fetch()` + `DataTransfer` a un `<input type=file>` copiado temporalmente
+  a `public/`, sin pasar bytes por ningún parámetro de texto), se generó un
+  Excel de prueba con `exceljs` (3 filas: una con código sin ceros que
+  calza con "MARCOS TULIO GOMEZ GOMEZ" 000569, una que solo empareja por
+  nombre con "BERNABE DE JESUS ANDRADE RON" 000626, una sin coincidencia),
+  se importó (el modal clasificó las 3 correctamente), se resolvió a mano
+  la fila pendiente, se recargó la página completa y se confirmó que la
+  resolución persistió. En "Comprobantes generales", sin ninguna tasa BCV
+  cargada en toda la sesión, la columna "Nota de débito" mostró el monto
+  importado exacto (194.484,43 Bs) — confirmando que el override no
+  depende de tasas. Se descargó la ND y la factura reales y se leyeron con
+  `Read`: la ND muestra "DIFERENCIA DE PRECIO SEMANA 31 194.484,43 Bs" +
+  "Flete: 194.484,43 Bs" sin ninguna tabla SERV/LITROS/PRECIO/TASA (correcto,
+  no hay tasas reales que mostrar); la factura normal embebe la misma caja
+  de ND igual de limpia. Se verificó también el modo tarjeta a 375px: las 3
+  columnas nuevas aparecen como 3 bloques de botones separados, sin
+  desborde horizontal.
+- Pruebas nuevas en `scripts/test-core.ts` (sección "Nota de débito
+  importada"): normalización de código (`"9119"` ~ `"009119"`, pero
+  `"569"` no calza con `"5690"`), `resolverNotaDebito` gana aunque no haya
+  params/tasas, queda marcado `origen: 'importado'`, y `construirComprobante`
+  lo aplica de punta a punta.
+
 ## 4. Intentos fallidos / notas técnicas
 
 - Automatizar clics de mouse (`computer.left_click`) no siempre disparaba
@@ -474,6 +623,17 @@ verde** (`src/core/receipt/dibujo.ts`)
   asigne un `DataTransfer` propio y dispare `change` en vez de abrir el
   diálogo del sistema operativo. Útil para probar importaciones de Excel
   por script.
+- **Para cargar un PDF/Excel de prueba real (`entradas/...`) en el
+  navegador de pruebas sin pasar los bytes por ningún parámetro de texto**:
+  copiar el archivo temporalmente a `public/` (Vite lo sirve tal cual en la
+  raíz), y en el navegador hacer `fetch('/archivo.pdf').then(r =>
+  r.arrayBuffer())` para construir un `File`/`DataTransfer` directamente en
+  la página y asignarlo al `<input type=file>` (o combinarlo con el truco
+  de interceptar `.click()` de arriba si el input lo crea
+  `plataforma.archivos.abrir`). Los bytes viajan disco → servidor Vite →
+  `fetch` del navegador, nunca a través de un tool call — evita por
+  completo el riesgo de corrupción del base64 manual descrito más abajo.
+  Borrar la copia de `public/` al terminar (no debe quedar commiteada).
 - Para inspeccionar una imagen o PDF grande generado en el navegador de
   pruebas (p. ej. la vista previa del comprobante, o una descarga real):
   interceptar `Node.prototype.appendChild` para capturar el `href` (`blob:`)

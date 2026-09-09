@@ -1,4 +1,4 @@
-import { calcularNotaDebito, calcularRegistro } from '../calc/calcular.ts';
+import { calcularRegistro, resolverNotaDebito } from '../calc/calcular.ts';
 import type {
   ConceptoCatalogo,
   ConceptoManual,
@@ -64,6 +64,10 @@ export interface ContextoComprobante {
   empresaPorFabrica: (fabricaCod: string) => Empresa | null;
   nombreCompleto: (codigo: string) => string | undefined;
   tasas: Map<string, number>;
+  /** Código de registro -> nota de débito importada de Excel (si existe),
+   * que reemplaza el cálculo por tasas para ese código. Vacío en la
+   * mayoría de las nóminas. */
+  ndImportada: Map<string, { centimos: number; fechaNota: string }>;
   titulo: string;
   tipo: TipoNomina;
   anio: number;
@@ -85,9 +89,14 @@ export function construirComprobante(
 ): DatosComprobante {
   const calc = calcularRegistro(registro, ctx.catalogo, manuales, null);
 
-  const notaDebito: ResultadoNotaDebito | null = paramsNd
-    ? calcularNotaDebito(paramsNd, registro.litrosTotal, ctx.fechaIni, ctx.tasas)
-    : null;
+  const notaDebito: ResultadoNotaDebito | null = resolverNotaDebito(
+    registro.codigo,
+    paramsNd,
+    registro.litrosTotal,
+    ctx.fechaIni,
+    ctx.tasas,
+    ctx.ndImportada,
+  );
 
   return {
     folio: folioDe(ctx.anio, ctx.numero, registro.codigo),

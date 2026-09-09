@@ -146,6 +146,42 @@ export function calcularNotaDebito(
   };
 }
 
+/**
+ * Igual que `calcularNotaDebito`, pero si el código tiene una nota de débito
+ * importada de Excel (ver `notas_debito_importadas`), ESA gana de forma
+ * incondicional — sin mirar tasas/params/litros. No hay alternancia por
+ * proveedor: es automático en cuanto el import queda emparejado.
+ */
+export function resolverNotaDebito(
+  codigo: string,
+  params: ParametrosNotaDebito | null,
+  litros: number | null,
+  fechaIniSemana: string,
+  tasas: Map<string, number>,
+  ndImportada: Map<string, { centimos: number; fechaNota: string }>,
+): ResultadoNotaDebito | null {
+  const importada = ndImportada.get(codigo);
+  if (importada) {
+    return {
+      aplica: true,
+      origen: 'importado',
+      precioUsd: 0,
+      litrosBase: litros ?? 0,
+      fechaFactura: params?.fechaFactura ?? importada.fechaNota,
+      fechaNota: importada.fechaNota,
+      fechaCalculo: params?.fechaCalculo ?? 'nota',
+      fechaTasaFin: '',
+      fechaTasaIni: '',
+      tasaIni: 0,
+      tasaFin: 0,
+      diferenciaTasa: 0,
+      montoUsd: 0,
+      centimos: importada.centimos,
+    };
+  }
+  return params ? calcularNotaDebito(params, litros, fechaIniSemana, tasas) : null;
+}
+
 // ─────────────────────────────────────────────────────────────
 // Conversión del precio de la leche
 // ─────────────────────────────────────────────────────────────

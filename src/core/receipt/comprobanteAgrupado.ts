@@ -1,4 +1,4 @@
-import { calcularNotaDebito, calcularRegistro } from '../calc/calcular.ts';
+import { calcularRegistro, resolverNotaDebito } from '../calc/calcular.ts';
 import type {
   ConceptoManual,
   NotaDebitoAgrupada,
@@ -34,9 +34,14 @@ export function construirComprobanteAgrupado(
   const calculados = miembros.map((m) => ({
     m,
     calc: calcularRegistro(m.registro, m.ctx.catalogo, m.manuales, null),
-    nd: m.paramsNd
-      ? calcularNotaDebito(m.paramsNd, m.registro.litrosTotal, m.ctx.fechaIni, m.ctx.tasas)
-      : null,
+    nd: resolverNotaDebito(
+      m.registro.codigo,
+      m.paramsNd,
+      m.registro.litrosTotal,
+      m.ctx.fechaIni,
+      m.ctx.tasas,
+      m.ctx.ndImportada,
+    ),
   }));
 
   const notaDebitoAgrupada: NotaDebitoAgrupada | undefined = calculados.some((c) => c.nd)

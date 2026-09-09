@@ -363,6 +363,10 @@ function datosDetalleNd(datos: DatosComprobante): {
   const ndComb = datos.notaDebitoCombinada;
   const ndAgr = datos.notaDebitoAgrupada;
 
+  // Una ND importada de Excel no tiene tasaIni/tasaFin/precioUsd reales:
+  // imprimirlos sería fabricar datos. Esas líneas se excluyen de la tabla
+  // SERV/LITROS/PRECIO/TASA pero se mantienen en el desglose de montos, que
+  // sigue siendo trazable por código/lado.
   if (ndAgr) {
     const aplicables = ndAgr.porCodigo.filter(
       (p): p is { codigo: string; resultado: NotaDebitoCalculada } => Boolean(p.resultado?.aplica),
@@ -371,27 +375,32 @@ function datosDetalleNd(datos: DatosComprobante): {
       desglose:
         aplicables.length > 1
           ? aplicables.map((p) => ({ etiqueta: p.codigo, centimos: p.resultado.centimos }))
-          : [],
-      filasTabla: aplicables.map((p) => ({ serv: p.codigo, r: p.resultado })),
+          : aplicables.length === 1 && aplicables[0]!.resultado.origen === 'importado'
+            ? [{ etiqueta: aplicables[0]!.codigo, centimos: aplicables[0]!.resultado.centimos }]
+            : [],
+      filasTabla: aplicables
+        .filter((p) => p.resultado.origen !== 'importado')
+        .map((p) => ({ serv: p.codigo, r: p.resultado })),
     };
   }
 
-  const dosLineasNd = Boolean(ndComb?.aplica && ndComb.leche?.aplica && ndComb.transporte?.aplica);
-  const filasTabla: { serv: string; r: NotaDebitoCalculada }[] = [];
+  const ladosAplicables: { etiqueta: string; r: NotaDebitoCalculada }[] = [];
   if (ndComb) {
-    if (ndComb.leche?.aplica) filasTabla.push({ serv: 'Leche', r: ndComb.leche });
-    if (ndComb.transporte?.aplica) filasTabla.push({ serv: 'Flete', r: ndComb.transporte });
+    if (ndComb.leche?.aplica) ladosAplicables.push({ etiqueta: 'Leche', r: ndComb.leche });
+    if (ndComb.transporte?.aplica) ladosAplicables.push({ etiqueta: 'Flete', r: ndComb.transporte });
   } else if (nd?.aplica) {
-    filasTabla.push({ serv: datos.tipo === 'leche' ? 'Leche' : 'Flete', r: nd });
+    ladosAplicables.push({ etiqueta: datos.tipo === 'leche' ? 'Leche' : 'Flete', r: nd });
   }
   return {
-    desglose: dosLineasNd
-      ? [
-          { etiqueta: 'Leche', centimos: filasTabla.find((f) => f.serv === 'Leche')!.r.centimos },
-          { etiqueta: 'Flete', centimos: filasTabla.find((f) => f.serv === 'Flete')!.r.centimos },
-        ]
-      : [],
-    filasTabla,
+    desglose:
+      ladosAplicables.length > 1
+        ? ladosAplicables.map((x) => ({ etiqueta: x.etiqueta, centimos: x.r.centimos }))
+        : ladosAplicables.length === 1 && ladosAplicables[0]!.r.origen === 'importado'
+          ? [{ etiqueta: ladosAplicables[0]!.etiqueta, centimos: ladosAplicables[0]!.r.centimos }]
+          : [],
+    filasTabla: ladosAplicables
+      .filter((x) => x.r.origen !== 'importado')
+      .map((x) => ({ serv: x.etiqueta, r: x.r })),
   };
 }
 
