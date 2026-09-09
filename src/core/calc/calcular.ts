@@ -140,9 +140,10 @@ export function calcularNotaDebito(
     tasaFin: tasaFin!,
     diferenciaTasa,
     montoUsd,
-    // Redondeada hacia arriba (nunca al más cercano), incluso si el monto
-    // fuera negativo: es la decisión explícita para la nota de débito.
-    centimos: Math.ceil(montoUsd * diferenciaTasa * 100),
+    // Redondeada hacia arriba AL BOLÍVAR ENTERO (no al céntimo), incluso si
+    // el monto fuera negativo: es la decisión explícita para la nota de
+    // débito — la factura sale en un monto limpio, sin centavos.
+    centimos: Math.ceil(montoUsd * diferenciaTasa) * 100,
   };
 }
 

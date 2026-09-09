@@ -17,8 +17,9 @@ export interface FilaNdExcel {
   bsXLtsInicio: number | null;
   bsXLtsAjustado: number | null;
   difXLts: number | null;
-  /** "Bs. a Pagar x Dif." convertido a céntimos, redondeado hacia arriba
-   * (misma convención que `calcularNotaDebito`, nunca al más cercano). */
+  /** "Bs. a Pagar x Dif." redondeado hacia arriba al bolívar entero (sin
+   * centavos) y convertido a céntimos — misma convención que
+   * `calcularNotaDebito`. */
   centimos: number;
   tipo: TipoNomina;
 }
@@ -191,7 +192,7 @@ export async function leerLibroNotasDebitoImportadas(
       bsXLtsInicio: celdaANumero(fila.getCell(10).value),
       bsXLtsAjustado: celdaANumero(fila.getCell(11).value),
       difXLts: celdaANumero(fila.getCell(12).value),
-      centimos: Math.ceil(bsAPagar * 100),
+      centimos: Math.ceil(bsAPagar) * 100,
       tipo: tieneLeche ? 'leche' : 'transporte',
     });
   });

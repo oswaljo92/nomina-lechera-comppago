@@ -35,22 +35,21 @@ desde ahí.
 ## 2. Estado actual
 
 Todo está implementado, tipado sin errores (`npm run check`), pasa
-`test:core`/`test:parser`, se probó a mano en el navegador con datos reales
-de `entradas/` (nómina de transporte real, se descargó la ND independiente
-y se confirmó el título "NOTA DE DEBITO", solo la fecha de ND, sin la
-leyenda "Flete: X Bs" bajo el total; se descargó también la factura normal
-del mismo proveedor y se confirmó que NO cambió — sigue con "COMPROBANTE DE
-PAGO", ambas fechas y la leyenda dentro de su caja de ND, tal como antes;
-se probó la columna nueva "Generar ND" de la pestaña Notas de Débito),
-está commiteado y pusheado a `origin/master`, y compilado en
-`release/CompPago-1.5.0-windows.zip` (`npm run electron:build` completo).
+`test:core`/`test:parser` (incluida una prueba actualizada que confirma el
+redondeo al bolívar entero: 2.748.532,50 → 2.748.533,00), se probó a mano
+en el navegador con datos reales (importando un Excel de prueba con un
+monto fraccionario: 1.564.989,22 se mostró correctamente como
+**1.564.990,00** en el modal de importación), está commiteado y pusheado a
+`origin/master`, y compilado en `release/CompPago-1.5.1-windows.zip`
+(`npm run electron:build` completo).
 
-**Versión actual: `1.5.0`** (subida en esta tanda, ver sección 3).
+**Versión actual: `1.5.1`** (subida en esta tanda, ver sección 3).
 
 Últimos commits:
 
 ```
-(este commit) Ajustes de contenido de la ND separada, redondeo hacia arriba, columna Generar ND; sube a 1.5.0
+(este commit) Redondea la ND al bolívar entero, no al céntimo; sube a 1.5.1
+15c5650 Ajustes de contenido de la ND separada, redondeo hacia arriba, columna Generar ND; sube a 1.5.0
 d2efde1 Pestañas Comprobantes/ND, columnas Vista-Config-Comprobante, import de ND por Excel; sube a 1.4.0
 (anterior) Corrige espaciado del desglose por código en la ND; sube a 1.3.2
 f61f0d7 Corrige boton ND en agrupados y ajustes de tabla (desborde/espaciado); sube a 1.3.1
@@ -609,7 +608,7 @@ sin ningún interruptor por proveedor.
   params/tasas, queda marcado `origen: 'importado'`, y `construirComprobante`
   lo aplica de punta a punta.
 
-### Esta sesión: ajustes de contenido en la ND separada, redondeo, columna "Generar ND"
+### Sesión anterior (7): ajustes de contenido en la ND separada, redondeo, columna "Generar ND"
 
 El usuario pidió 4 cosas puntuales sobre la nota de débito (ND) como
 documento independiente (`dibujarNotaDebito`), sin tocar el comprobante de
@@ -667,6 +666,34 @@ activado "Separar la nota de débito"):
   generales" y se confirmó que no cambió nada (mismo título "COMPROBANTE
   DE PAGO", ambas fechas, sigue con la leyenda "Flete: X Bs" dentro de su
   caja de ND).
+
+### Esta sesión: la ND redondea al bolívar entero, no al céntimo
+
+El usuario reportó (con captura) que el monto de la ND seguía saliendo con
+centavos (ej. "1.564.989,78 Bs") después de la tanda anterior, donde ya se
+había agregado `Math.ceil` — pero ese redondeo era **al céntimo** (subía
+la fracción de céntimo, pero dejaba los céntimos visibles). Se preguntó
+para confirmar y el usuario aclaró: quiere redondeo **al bolívar entero**,
+sin céntimos, para que la factura salga en un monto limpio.
+
+- `src/core/calc/calcular.ts` (`calcularNotaDebito`): `centimos:
+  Math.ceil(montoUsd * diferenciaTasa * 100)` → `Math.ceil(montoUsd *
+  diferenciaTasa) * 100` — primero redondea el monto en Bs hacia arriba,
+  luego lo convierte a céntimos (que quedan siempre en `.00`).
+- `src/core/db/notaDebitoExcel.ts`: mismo cambio, `Math.ceil(bsAPagar *
+  100)` → `Math.ceil(bsAPagar) * 100`.
+- No hizo falta tocar `NotaDebitoCombinada`/`NotaDebitoAgrupada`: su
+  `centimos` es una suma de valores ya redondeados al bolívar (múltiplos
+  de 100), y la suma de múltiplos de 100 sigue siendo múltiplo de 100, así
+  que el total combinado/agrupado también sale limpio automáticamente.
+- Prueba en `scripts/test-core.ts` actualizada: el caso que antes esperaba
+  `2.748.532,50 Bs` ahora espera `2.748.533,00 Bs` (74.790 L × 2,45 $/L ×
+  15 Bs de diferencia = 2.748.532,50 Bs exactos, redondeados hacia arriba
+  al bolívar entero).
+- **Verificado en el navegador**: se generó un Excel de prueba con
+  "Bs. a Pagar x Dif." = 1.564.989,22 y el modal de importación mostró
+  correctamente **1.564.990,00** (sin céntimos) antes de confirmar nada
+  (se canceló el import de prueba para no ensuciar la base).
 
 ## 4. Intentos fallidos / notas técnicas
 

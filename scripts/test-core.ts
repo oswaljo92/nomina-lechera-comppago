@@ -377,9 +377,10 @@ const ndPorNota = calcularNotaDebito(
   repo.tasasMapa(db),
 );
 ok(
-  // 74.790 L × 2,45 $/L × (215 − 200) = 2.748.532,50 Bs
-  ndPorNota.aplica && ndPorNota.centimos === 274853250,
-  'Usando la fecha de nota de débito el monto cambia',
+  // 74.790 L × 2,45 $/L × (215 − 200) = 2.748.532,50 Bs -> redondeado
+  // hacia arriba al bolívar entero: 2.748.533,00 Bs.
+  ndPorNota.aplica && ndPorNota.centimos === 274853300,
+  'Usando la fecha de nota de débito el monto cambia (redondeado al Bs entero)',
   ndPorNota.aplica ? `${formatearBs(ndPorNota.centimos)} Bs` : '',
 );
 
