@@ -17,40 +17,41 @@ mismo tipo (mismo proveedor con varios códigos de leche o de transporte),
 un selector de formato único (PDF/Imagen) que simplifica la descarga de
 factura y ND por separado, el bug del botón "ND" que no aparecía para
 proveedores agrupados, dos ajustes de tabla (desbordamiento horizontal en
-escritorio, espaciado en tarjeta móvil), y la última tanda: un bug real de
-espaciado en la Nota de Débito de un grupo (el desglose por código quedaba
-pegado al borde de la caja verde), confirmado también con datos reales de
-transporte (no solo leche), y la última tanda: la tabla de Comprobantes se
-dividió en dos pestañas ("Comprobantes generales" / "Notas de Débito"), la
-columna de acciones se separó en tres (Vista, Configuración, Comprobante)
-para que los botones se alineen bien en todos los tamaños de pantalla, y se
-agregó la importación de notas de débito ya calculadas desde un Excel
-externo (empareja por código o por nombre con lo ya cargado y reemplaza el
-cálculo automático por tasas BCV).
+escritorio, espaciado en tarjeta móvil), un bug real de espaciado en la
+Nota de Débito de un grupo (el desglose por código quedaba pegado al borde
+de la caja verde), confirmado también con datos reales de transporte (no
+solo leche), la tabla de Comprobantes dividida en dos pestañas
+("Comprobantes generales" / "Notas de Débito"), la columna de acciones
+separada en tres (Vista, Configuración, Comprobante) para que los botones
+se alineen bien en todos los tamaños de pantalla, la importación de notas
+de débito ya calculadas desde un Excel externo (empareja por código o por
+nombre con lo ya cargado y reemplaza el cálculo automático por tasas BCV),
+y la última tanda: 3 ajustes de contenido en la nota de débito como
+documento aparte (título, sin fecha de factura, sin la leyenda de monto
+repetido), redondeo hacia arriba del monto importado, y una columna nueva
+en la pestaña "Notas de Débito" para generar/descargar la ND directamente
+desde ahí.
 
 ## 2. Estado actual
 
 Todo está implementado, tipado sin errores (`npm run check`), pasa
-`test:core`/`test:parser` (incluidas pruebas nuevas de normalización de
-código y del override por import: gana aunque no haya tasas ni params
-configurados, queda marcado `origen: 'importado'`, y se verificó de punta a
-punta con `construirComprobante`), se probó a mano en el navegador con
-datos reales de `entradas/` (nómina de transporte real cargada, Excel de
-prueba con 3 filas: 1 emparejada por código, 1 por nombre, 1 sin emparejar
-resuelta a mano, resolución verificada persistente tras recargar, factura y
-ND descargadas y leídas confirmando que el monto importado reemplaza el
-cálculo por tasas y que NO se imprime ninguna tasa/precio inventado, tabla
-de escritorio sin desbordamiento a 1280px, tarjetas móviles a 375px con las
-3 columnas nuevas en bloques separados), está commiteado y pusheado a
-`origin/master`, y compilado en `release/CompPago-1.4.0-windows.zip`
-(`npm run electron:build` completo).
+`test:core`/`test:parser`, se probó a mano en el navegador con datos reales
+de `entradas/` (nómina de transporte real, se descargó la ND independiente
+y se confirmó el título "NOTA DE DEBITO", solo la fecha de ND, sin la
+leyenda "Flete: X Bs" bajo el total; se descargó también la factura normal
+del mismo proveedor y se confirmó que NO cambió — sigue con "COMPROBANTE DE
+PAGO", ambas fechas y la leyenda dentro de su caja de ND, tal como antes;
+se probó la columna nueva "Generar ND" de la pestaña Notas de Débito),
+está commiteado y pusheado a `origin/master`, y compilado en
+`release/CompPago-1.5.0-windows.zip` (`npm run electron:build` completo).
 
-**Versión actual: `1.4.0`** (subida en esta tanda, ver sección 3).
+**Versión actual: `1.5.0`** (subida en esta tanda, ver sección 3).
 
 Últimos commits:
 
 ```
-(este commit) Pestañas Comprobantes/ND, columnas Vista-Config-Comprobante, import de ND por Excel; sube a 1.4.0
+(este commit) Ajustes de contenido de la ND separada, redondeo hacia arriba, columna Generar ND; sube a 1.5.0
+d2efde1 Pestañas Comprobantes/ND, columnas Vista-Config-Comprobante, import de ND por Excel; sube a 1.4.0
 (anterior) Corrige espaciado del desglose por código en la ND; sube a 1.3.2
 f61f0d7 Corrige boton ND en agrupados y ajustes de tabla (desborde/espaciado); sube a 1.3.1
 c4bb01c Interruptor unir/separar ND, agrupación de códigos del mismo tipo, selector de formato único; sube a 1.3.0
@@ -469,7 +470,7 @@ verde** (`src/core/receipt/dibujo.ts`)
   herramienta `Read` decide cómo interpretar el archivo por su extensión,
   no por el contenido.
 
-### Esta sesión: pestañas Comprobantes/ND, columnas Vista-Config-Comprobante, import de ND por Excel
+### Sesión anterior (6): pestañas Comprobantes/ND, columnas Vista-Config-Comprobante, import de ND por Excel
 
 El usuario pidió tres cosas relacionadas: (1) que la tabla de Comprobantes
 tenga una columna "Vista" (ver factura / ver ND por separado) y una columna
@@ -607,6 +608,65 @@ sin ningún interruptor por proveedor.
   `"569"` no calza con `"5690"`), `resolverNotaDebito` gana aunque no haya
   params/tasas, queda marcado `origen: 'importado'`, y `construirComprobante`
   lo aplica de punta a punta.
+
+### Esta sesión: ajustes de contenido en la ND separada, redondeo, columna "Generar ND"
+
+El usuario pidió 4 cosas puntuales sobre la nota de débito (ND) como
+documento independiente (`dibujarNotaDebito`), sin tocar el comprobante de
+pago normal (que sigue embebiendo la ND igual que siempre cuando NO está
+activado "Separar la nota de débito"):
+
+1. **Redondeo hacia arriba del monto importado**
+   (`src/core/db/notaDebitoExcel.ts`) — `calcularNotaDebito` ya redondeaba
+   hacia arriba (`Math.ceil`) desde antes; el import de Excel usaba
+   `Math.round` (al más cercano). Cambiado a `Math.ceil` para que ambos
+   caminos usen la misma convención.
+2. **Título**: `'COMPROBANTE NOTA DE DEBITO'` → `'NOTA DE DEBITO'`, solo en
+   la llamada desde `dibujarNotaDebito` (el rótulo "NOTA DE DÉBITO" dentro
+   del comprobante normal es otro texto, no se tocó).
+3. **Sin "Fecha de Factura" en la ND separada**: `dibujarBloqueIdentificacion`
+   (compartida con el comprobante normal) ganó un parámetro
+   `soloFechaNota` (default `false`); cuando es `true` solo imprime "Fecha
+   de Nota de débito {fecha}" (con el prefijo "Leche ·"/"Flete ·" si es
+   combinado), sin "Fecha de Factura". Solo `dibujarNotaDebito` lo pasa en
+   `true`; `dibujarComprobante` sigue mostrando ambas fechas como siempre.
+4. **Sin la leyenda "Leche: X Bs"/"Flete: X Bs" bajo el total**:
+   `dibujarDetalleNd` ganó un parámetro `ocultarDesglose` (default
+   `false`); en `true` no dibuja las líneas de desglose (el monto ya está
+   en el título de la caja verde) pero sigue mostrando la tabla
+   SERV/LITROS/PRECIO/TASA si aplica. Solo `dibujarNotaDebito` lo pasa en
+   `true` — el comprobante normal sigue mostrando el desglose como
+   siempre (es útil ahí porque el monto no aparece repetido en ningún otro
+   lado del documento).
+
+**Columna nueva "Generar ND" en la pestaña "Notas de Débito"**
+(`src/ui/screens/comprobantes/SeccionNotasDebito.tsx`, `Comprobantes.tsx`)
+- Pedido explícito: poder generar/descargar la ND directamente desde la
+  tabla de esa pestaña, sin afectar cómo se genera desde "Comprobantes
+  generales". Se replicó ahí (no se refactorizó ni se tocó
+  `SeccionComprobantesGenerales.tsx`) la misma lógica de resolución
+  `unidadDe` (vínculo cruzado leche-transporte / grupo del mismo tipo /
+  individual) para que el documento generado desde esta pestaña sea
+  **exactamente el mismo** que generaría "Comprobantes generales" para ese
+  proveedor — no es un mecanismo de generación nuevo, es un atajo al que
+  ya existe.
+- Columna con dos botones por fila (solo si la fila ya está emparejada a
+  un registro **de la nómina actualmente abierta** — un registro de la
+  nómina "hermana" del otro tipo, que sí puede aparecer en esta tabla si
+  el Excel traía filas mixtas, muestra en su lugar "Ver en la nómina de
+  leche/transporte", ya que abrir esa nómina desde aquí queda fuera de
+  alcance de este pedido): 🧾 vista previa (reusa `VistaPrevia` con
+  `cual="nd"`) y "Descargar ND" (reusa `generarNotasDebito`, mismo patrón
+  que `descargarNd` en `SeccionComprobantesGenerales`). `Comprobantes.tsx`
+  (el shell) pasa `formato` como prop nueva a `SeccionNotasDebito` para
+  que respete el mismo selector PDF/Imagen del encabezado.
+- **Verificado de punta a punta**: se descargó la ND de un proveedor desde
+  esta columna nueva y se leyó el PDF real — título "NOTA DE DEBITO", solo
+  fecha de ND, sin leyenda de desglose, monto correcto. Se descargó
+  también la factura normal del mismo proveedor desde "Comprobantes
+  generales" y se confirmó que no cambió nada (mismo título "COMPROBANTE
+  DE PAGO", ambas fechas, sigue con la leyenda "Flete: X Bs" dentro de su
+  caja de ND).
 
 ## 4. Intentos fallidos / notas técnicas
 

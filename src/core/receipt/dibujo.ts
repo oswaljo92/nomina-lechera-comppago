@@ -263,6 +263,9 @@ function dibujarBloqueIdentificacion(
   y0: number,
   opciones: OpcionesDibujo,
   titulo: string,
+  /** true en la nota de débito como documento aparte: ahí la fecha de
+   * factura no aplica, solo se muestra la fecha de nota de débito. */
+  soloFechaNota = false,
 ): number {
   let y = y0;
 
@@ -299,17 +302,23 @@ function dibujarBloqueIdentificacion(
       const { leche, transporte } = datos.notaDebitoCombinada;
       if (leche?.aplica) {
         lineasFecha.push(
-          `Leche · Fecha de Factura ${fechaAMostrar(leche.fechaFactura)}   ·   Fecha de Nota de débito ${fechaAMostrar(leche.fechaNota)}`,
+          soloFechaNota
+            ? `Leche · Fecha de Nota de débito ${fechaAMostrar(leche.fechaNota)}`
+            : `Leche · Fecha de Factura ${fechaAMostrar(leche.fechaFactura)}   ·   Fecha de Nota de débito ${fechaAMostrar(leche.fechaNota)}`,
         );
       }
       if (transporte?.aplica) {
         lineasFecha.push(
-          `Flete · Fecha de Factura ${fechaAMostrar(transporte.fechaFactura)}   ·   Fecha de Nota de débito ${fechaAMostrar(transporte.fechaNota)}`,
+          soloFechaNota
+            ? `Flete · Fecha de Nota de débito ${fechaAMostrar(transporte.fechaNota)}`
+            : `Flete · Fecha de Factura ${fechaAMostrar(transporte.fechaFactura)}   ·   Fecha de Nota de débito ${fechaAMostrar(transporte.fechaNota)}`,
         );
       }
     } else if (datos.notaDebito?.aplica) {
       lineasFecha.push(
-        `Fecha de Factura ${fechaAMostrar(datos.notaDebito.fechaFactura)}   ·   Fecha de Nota de débito ${fechaAMostrar(datos.notaDebito.fechaNota)}`,
+        soloFechaNota
+          ? `Fecha de Nota de débito ${fechaAMostrar(datos.notaDebito.fechaNota)}`
+          : `Fecha de Factura ${fechaAMostrar(datos.notaDebito.fechaFactura)}   ·   Fecha de Nota de débito ${fechaAMostrar(datos.notaDebito.fechaNota)}`,
       );
     }
     for (const linea of lineasFecha) {
@@ -419,9 +428,18 @@ function altoDetalleNd(desgloseLength: number, filasTablaLength: number): number
  * la multiplicación. Reusado por el comprobante completo y por la nota de
  * débito independiente.
  */
-function dibujarDetalleNd(l: Lienzo, datos: DatosComprobante, izq: number, y0: number): number {
+function dibujarDetalleNd(
+  l: Lienzo,
+  datos: DatosComprobante,
+  izq: number,
+  y0: number,
+  /** true en la nota de débito como documento aparte: el monto ya se ve en
+   * el título de la caja, no hace falta repetirlo como leyenda debajo. */
+  ocultarDesglose = false,
+): number {
   let y = y0;
-  const { desglose, filasTabla } = datosDetalleNd(datos);
+  const { desglose: desgloseCompleto, filasTabla } = datosDetalleNd(datos);
+  const desglose = ocultarDesglose ? [] : desgloseCompleto;
 
   desglose.forEach((d, i) => {
     l.texto(`${d.etiqueta}: ${formatearBs(d.centimos)} Bs`, izq + 12, y + 9 + i * 9, {
@@ -723,7 +741,8 @@ export function dibujarNotaDebito(
     der,
     y,
     { ...opciones, mostrarNotaDebito: true },
-    'COMPROBANTE NOTA DE DEBITO',
+    'NOTA DE DEBITO',
+    true,
   );
 
   const nd = datos.notaDebito;
@@ -734,9 +753,11 @@ export function dibujarNotaDebito(
   y += 6;
   if (aplica) {
     const centimosNd = ndAgr ? ndAgr.centimos : ndComb ? ndComb.centimos : (nd as { centimos: number }).centimos;
-    const { desglose, filasTabla } = datosDetalleNd(datos);
+    const { filasTabla } = datosDetalleNd(datos);
     const altoFila = 26;
-    const altoCaja = altoFila + altoDetalleNd(desglose.length, filasTabla.length);
+    // El desglose ("Leche: X Bs") se oculta en este documento — el monto ya
+    // está en el título de la caja, así que su alto no participa aquí.
+    const altoCaja = altoFila + altoDetalleNd(0, filasTabla.length);
 
     l.rect({ x: izq, y, ancho: ANCHO_UTIL, alto: altoCaja, borde: COLORES.verde, grosor: 1.4, radio: 5 });
     l.rect({ x: izq + 1, y: y + 1, ancho: ANCHO_UTIL - 2, alto: altoFila - 1, relleno: COLORES.verde });
@@ -752,7 +773,7 @@ export function dibujarNotaDebito(
       alineacion: 'der',
     });
     y += altoFila;
-    y = dibujarDetalleNd(l, datos, izq, y);
+    y = dibujarDetalleNd(l, datos, izq, y, true);
   } else {
     const alto = 42;
     l.rect({

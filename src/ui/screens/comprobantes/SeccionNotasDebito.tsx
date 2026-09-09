@@ -1,12 +1,18 @@
 import { useState } from 'react';
 import { useApp } from '../../estado.tsx';
-import { Aviso, Pastilla, Tarjeta, Vacio } from '../../components/comunes.tsx';
+import { Aviso, Modal, Pastilla, Tarjeta, Vacio } from '../../components/comunes.tsx';
 import { ModalConceptoManual } from '../../components/ModalConceptoManual.tsx';
 import { ModalNotaDebito } from '../../components/ModalNotaDebito.tsx';
 import { ModalImportarNotaDebito } from '../../components/ModalImportarNotaDebito.tsx';
 import { ModalResolverNotaDebito } from '../../components/ModalResolverNotaDebito.tsx';
+import { VistaPrevia } from '../../components/VistaPrevia.tsx';
 import * as repo from '../../../core/db/repo.ts';
 import { leerLibroNotasDebitoImportadas, type LecturaLibroNd } from '../../../core/db/notaDebitoExcel.ts';
+import { construirComprobante, type ContextoComprobante, type DatosComprobante } from '../../../core/receipt/comprobante.ts';
+import { construirComprobanteCombinado } from '../../../core/receipt/comprobanteCombinado.ts';
+import { construirComprobanteAgrupado } from '../../../core/receipt/comprobanteAgrupado.ts';
+import { OPCIONES_DIBUJO } from '../../../core/receipt/dibujo.ts';
+import { generarNotasDebito, type Formato, type ItemAGenerar } from '../../salida/generar.ts';
 import { formatearBs, formatearEntero } from '../../../core/parser/numeros.ts';
 import type { NotaDebitoImportada, TipoNomina } from '../../../core/types.ts';
 import type { FechasNomina } from '../Comprobantes.tsx';
@@ -21,10 +27,12 @@ const ETIQUETA_EMPAREJAMIENTO: Record<NotaDebitoImportada['emparejamiento'], { t
 export function SeccionNotasDebito({
   nomina,
   fechas,
+  formato,
   filtroInicial,
 }: {
   nomina: repo.NominaResumen;
   fechas: FechasNomina;
+  formato: Formato;
   filtroInicial: string | null;
 }) {
   const { db, usuario, plataforma, cambiado, puedo } = useApp();
@@ -34,9 +42,10 @@ export function SeccionNotasDebito({
   const [importando, setImportando] = useState(false);
   const [filaAResolver, setFilaAResolver] = useState<NotaDebitoImportada | null>(null);
   const [dialogo, setDialogo] = useState<
-    { tipo: 'manual'; ids: string[] } | { tipo: 'nd'; ids: string[] } | null
+    { tipo: 'manual'; ids: string[] } | { tipo: 'nd'; ids: string[] } | { tipo: 'previa-nd'; registroId: string } | null
   >(null);
   const [mensaje, setMensaje] = useState<{ nivel: 'ok' | 'error'; texto: string } | null>(null);
+  const [progreso, setProgreso] = useState(false);
 
   const registros = repo.registrosDeNomina(db, nomina.id);
   const tasas = repo.tasasMapa(db);
@@ -49,6 +58,133 @@ export function SeccionNotasDebito({
     [nomina.tipo, registros],
     [otroTipo, otrosRegistros],
   ]);
+
+  const catalogo = repo.catalogoMapa(db);
+  const nombresFull = repo.nombresCompletos(db, nomina.tipo);
+  const nombresFullOtro = otraNomina ? repo.nombresCompletos(db, otroTipo) : new Map<string, string>();
+  const ndImportada = repo.ndImportadaMapa(db, nomina.id);
+  const ndImportadaOtro = otraNomina ? repo.ndImportadaMapa(db, otraNomina.id) : new Map();
+
+  const ctx: ContextoComprobante = {
+    catalogo,
+    empresaPorFabrica: (cod) => repo.empresaDeFabrica(db, cod),
+    nombreCompleto: (codigo) => nombresFull.get(codigo),
+    tasas,
+    ndImportada,
+    titulo: nomina.tipo === 'leche' ? 'PAGO DE LECHE FRESCA' : 'NOMINA DE RUTAS',
+    tipo: nomina.tipo,
+    anio: nomina.anio,
+    numero: nomina.numero,
+    fechaIni: nomina.fechaIni,
+    fechaFin: nomina.fechaFin,
+  };
+  const ctxOtro: ContextoComprobante = {
+    catalogo,
+    empresaPorFabrica: (cod) => repo.empresaDeFabrica(db, cod),
+    nombreCompleto: (codigo) => nombresFullOtro.get(codigo),
+    tasas,
+    ndImportada: ndImportadaOtro,
+    titulo: otroTipo === 'leche' ? 'PAGO DE LECHE FRESCA' : 'NOMINA DE RUTAS',
+    tipo: otroTipo,
+    anio: nomina.anio,
+    numero: nomina.numero,
+    fechaIni: otraNomina?.fechaIni ?? nomina.fechaIni,
+    fechaFin: otraNomina?.fechaFin ?? nomina.fechaFin,
+  };
+
+  // Mismos vínculos/grupos ya confirmados que usa "Comprobantes generales",
+  // para que generar la ND desde aquí produzca exactamente el mismo
+  // documento (combinado/agrupado) que generarla desde allá — esta columna
+  // no crea un mecanismo de generación nuevo, solo un atajo al que ya existe.
+  const vinculoPorCodigo = new Map(
+    repo
+      .vinculosProveedor(db)
+      .filter((v) => v.estado === 'confirmado')
+      .map((v) => [nomina.tipo === 'leche' ? v.codigoLeche : v.codigoTransporte, v]),
+  );
+  function contraparteDe(codigo: string): string | null {
+    const vinculo = vinculoPorCodigo.get(codigo);
+    if (!vinculo) return null;
+    return nomina.tipo === 'leche' ? vinculo.codigoTransporte : vinculo.codigoLeche;
+  }
+  const grupoPorCodigo = new Map(
+    repo
+      .gruposMismoTipo(db)
+      .filter((g) => g.tipo === nomina.tipo)
+      .flatMap((g) => g.codigos.map((c) => [c, g] as const)),
+  );
+
+  function unidadDe(r: (typeof registros)[number]): { registroIds: string[]; datos: DatosComprobante } {
+    const contraparteCodigo = contraparteDe(r.leido.codigo);
+    const contraparte = contraparteCodigo
+      ? otrosRegistros.find((x) => x.leido.codigo === contraparteCodigo)
+      : undefined;
+
+    if (contraparte) {
+      const combinado =
+        nomina.tipo === 'leche'
+          ? construirComprobanteCombinado(
+              r.leido, r.manuales, r.notaDebito, ctx,
+              contraparte.leido, contraparte.manuales, contraparte.notaDebito, ctxOtro,
+            )
+          : construirComprobanteCombinado(
+              contraparte.leido, contraparte.manuales, contraparte.notaDebito, ctxOtro,
+              r.leido, r.manuales, r.notaDebito, ctx,
+            );
+      return { registroIds: [r.id, contraparte.id], datos: combinado };
+    }
+
+    const grupo = grupoPorCodigo.get(r.leido.codigo);
+    const miembros = grupo
+      ? grupo.codigos
+          .map((c) => registros.find((x) => x.leido.codigo === c))
+          .filter((x): x is (typeof registros)[number] => x !== undefined)
+      : [];
+    if (grupo && miembros.length > 1) {
+      const agrupado = construirComprobanteAgrupado(
+        miembros.map((m) => ({ registro: m.leido, manuales: m.manuales, paramsNd: m.notaDebito, ctx })),
+        grupo.principal,
+      );
+      return { registroIds: miembros.map((m) => m.id), datos: agrupado };
+    }
+
+    return { registroIds: [r.id], datos: construirComprobante(r.leido, r.manuales, r.notaDebito, ctx) };
+  }
+
+  function ndAplica(datos: DatosComprobante): boolean {
+    if (datos.notaDebitoAgrupada) return datos.notaDebitoAgrupada.aplica;
+    return datos.notaDebitoCombinada ? datos.notaDebitoCombinada.aplica : Boolean(datos.notaDebito?.aplica);
+  }
+
+  async function descargarSoloNd(registro: (typeof registros)[number]) {
+    if (!usuario) return;
+    setMensaje(null);
+    const u = unidadDe(registro);
+    if (!ndAplica(u.datos)) {
+      setMensaje({ nivel: 'error', texto: 'Este proveedor no tiene una nota de débito calculable.' });
+      return;
+    }
+    setProgreso(true);
+    try {
+      const items: ItemAGenerar[] = [{ registroIds: u.registroIds, datos: u.datos, numeroNomina: nomina.numero }];
+      const archivos = await generarNotasDebito(items, { formato, opciones: OPCIONES_DIBUJO });
+      for (const a of archivos) await plataforma.archivos.guardar(a.nombre, a.blob);
+      await repo.registrarDescargas(
+        db,
+        usuario,
+        archivos.flatMap((a) => a.registroIds.map((registroId) => ({ registroId, folio: a.folio, formato, archivo: a.nombre }))),
+      );
+      cambiado();
+      setMensaje({ nivel: 'ok', texto: `Se descargó la nota de débito en ${formato.toUpperCase()}.` });
+    } catch (error) {
+      setMensaje({
+        nivel: 'error',
+        texto: `No se pudo generar la nota de débito: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    } finally {
+      setProgreso(false);
+    }
+  }
 
   const filasImportadas = repo.notasDebitoImportadasDeNomina(db, nomina.id);
   const filasImportadasOtro = otraNomina ? repo.notasDebitoImportadasDeNomina(db, otraNomina.id) : [];
@@ -133,6 +269,7 @@ export function SeccionNotasDebito({
                   <th>Fecha ND</th>
                   <th className="num">Bs. a Pagar x Dif.</th>
                   <th>Estado</th>
+                  <th style={{ textAlign: 'right' }}>Generar ND</th>
                   <th style={{ textAlign: 'right' }}>Acciones</th>
                 </tr>
               </thead>
@@ -153,6 +290,32 @@ export function SeccionNotasDebito({
                       <td className="num" data-etiqueta="Bs. a Pagar x Dif.">{formatearBs(f.centimos)}</td>
                       <td data-etiqueta="Estado">
                         <Pastilla tono={etiqueta.tono}>{etiqueta.texto}</Pastilla>
+                      </td>
+                      <td className="acciones-celda">
+                        {registro && f.tipo === nomina.tipo ? (
+                          <>
+                            <button
+                              className="btn sutil chico"
+                              title="Ver nota de débito"
+                              onClick={() => setDialogo({ tipo: 'previa-nd', registroId: registro.id })}
+                            >
+                              🧾
+                            </button>
+                            <button
+                              className="btn chico"
+                              disabled={progreso || !puedo('generar-comprobante')}
+                              onClick={() => void descargarSoloNd(registro)}
+                            >
+                              Descargar ND
+                            </button>
+                          </>
+                        ) : registro ? (
+                          <span className="tenue pequeno">
+                            Ver en la nómina de {f.tipo === 'leche' ? 'leche' : 'transporte'}
+                          </span>
+                        ) : (
+                          <span className="tenue pequeno">Empareja primero</span>
+                        )}
                       </td>
                       <td className="acciones-celda">
                         {!f.registroId && (
@@ -310,6 +473,26 @@ export function SeccionNotasDebito({
             });
           }}
         />
+      )}
+
+      {dialogo?.tipo === 'previa-nd' && (
+        <Modal
+          ancho
+          titulo="Vista previa de la nota de débito"
+          descripcion="Así se verá el PDF y la imagen que descargues."
+          alCerrar={() => setDialogo(null)}
+          pie={
+            <button className="btn" onClick={() => setDialogo(null)}>
+              Cerrar
+            </button>
+          }
+        >
+          <VistaPrevia
+            datos={unidadDe(registros.find((r) => r.id === dialogo.registroId)!).datos}
+            opciones={OPCIONES_DIBUJO}
+            cual="nd"
+          />
+        </Modal>
       )}
     </>
   );

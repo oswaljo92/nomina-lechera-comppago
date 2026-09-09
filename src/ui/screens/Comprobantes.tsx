@@ -173,7 +173,7 @@ export function Comprobantes({ nominaIdInicial }: { nominaIdInicial?: string }) 
         />
       )}
       {pestana === 'notas-debito' && (
-        <SeccionNotasDebito nomina={nomina} fechas={fechas} filtroInicial={filtroCodigoNd} />
+        <SeccionNotasDebito nomina={nomina} fechas={fechas} formato={formato} filtroInicial={filtroCodigoNd} />
       )}
 
       {dialogoOpciones && (
