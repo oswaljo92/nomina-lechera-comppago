@@ -6,6 +6,8 @@ import type { TipoNomina } from '../types.ts';
 /** Fila del Excel externo, ya parseada (sin normalizar todavía el código). */
 export interface FilaNdExcel {
   fechaNota: string; // ISO
+  /** '' si el Excel no trae columna de código (formato usado en la práctica
+   * hoy por el usuario) — el emparejamiento cae entonces solo por nombre. */
   codigoExcel: string;
   fabricaExcel: string | null;
   sapExcel: string | null;
@@ -92,22 +94,47 @@ function normalizarNombre(nombre: string): string {
   return nombre.trim().toUpperCase().replace(/\s+/g, ' ');
 }
 
-/** Tolera el truncado a ~30 caracteres que el PDF le hace al nombre. */
-function nombresCoinciden(a: string, b: string): boolean {
-  const na = normalizarNombre(a);
-  const nb = normalizarNombre(b);
-  if (!na || !nb) return false;
-  return na === nb || na.startsWith(nb) || nb.startsWith(na);
+/**
+ * Compara el nombre del registro (PDF, `nombrePdf`) contra el del Excel
+ * (`nombreExcel`). Tolera el truncado a ~30 caracteres que el PDF le hace al
+ * nombre — pero SOLO en esa dirección (el del Excel empieza con el del PDF),
+ * nunca al revés: permitir la dirección contraria hacía que un nombre corto
+ * del Excel (ej. "DIAMAGRO") calzara por prefijo con CUALQUIER registro cuyo
+ * nombre completo empezara igual (ej. "DIAMAGRO, C.A."), generando
+ * ambigüedad entre dos proveedores realmente distintos.
+ */
+function nombresCoinciden(nombrePdf: string, nombreExcel: string): boolean {
+  const pdf = normalizarNombre(nombrePdf);
+  const excel = normalizarNombre(nombreExcel);
+  if (!pdf || !excel) return false;
+  return excel.startsWith(pdf);
 }
 
 function emparejar(fila: FilaNdExcel, candidatosDelTipo: RegistroGuardado[]): FilaNdResuelta {
-  const codigoExcel = normalizarCodigo(fila.codigoExcel);
-  const porCodigo = candidatosDelTipo.filter((r) => normalizarCodigo(r.leido.codigo) === codigoExcel);
-  if (porCodigo.length === 1) {
-    return { fila, emparejamiento: 'codigo', candidatos: porCodigo };
+  let porCodigo: RegistroGuardado[] = [];
+  if (fila.codigoExcel) {
+    const codigoExcel = normalizarCodigo(fila.codigoExcel);
+    porCodigo = candidatosDelTipo.filter((r) => normalizarCodigo(r.leido.codigo) === codigoExcel);
+    if (porCodigo.length === 1) {
+      return { fila, emparejamiento: 'codigo', candidatos: porCodigo };
+    }
   }
 
-  const porNombre = candidatosDelTipo.filter((r) => nombresCoinciden(r.leido.nombre, fila.proveedorExcel));
+  // El nombre exacto manda sobre el prefijo: si dos proveedores reales
+  // distintos comparten un prefijo (ej. "DIAMAGRO" y "DIAMAGRO, C.A."), el
+  // que calza exacto no debe quedar en duda solo porque el otro también
+  // "empieza igual". El prefijo (tolerando el truncado a ~30 caracteres del
+  // PDF) es el segundo intento, no el primero.
+  const excelNorm = normalizarNombre(fila.proveedorExcel);
+  const porNombreExacto = candidatosDelTipo.filter((r) => normalizarNombre(r.leido.nombre) === excelNorm);
+  if (porNombreExacto.length === 1) {
+    return { fila, emparejamiento: 'nombre', candidatos: porNombreExacto };
+  }
+
+  const porNombre =
+    porNombreExacto.length === 0
+      ? candidatosDelTipo.filter((r) => nombresCoinciden(r.leido.nombre, fila.proveedorExcel))
+      : porNombreExacto;
   if (porNombre.length === 1) {
     return { fila, emparejamiento: 'nombre', candidatos: porNombre };
   }
@@ -117,17 +144,45 @@ function emparejar(fila: FilaNdExcel, candidatosDelTipo: RegistroGuardado[]): Fi
   return { fila, emparejamiento: 'sin-emparejar', candidatos: porCodigo.length > 0 ? porCodigo : porNombre };
 }
 
+/** Quita acentos, pasa a minúsculas y colapsa cualquier signo/espacio, para
+ * comparar encabezados sin depender de tildes, "$", "/" o mayúsculas. */
+function normalizarEncabezado(texto: string): string {
+  return texto
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+/** Encabezado (normalizado) -> número de columna, leído de la fila 1. Así el
+ * archivo puede traer las columnas en el orden que sea, con o sin la
+ * columna "Código de Proveedor" (opcional) — no depende de posiciones fijas. */
+function mapaEncabezados(filaEncabezado: ExcelJS.Row): Map<string, number> {
+  const mapa = new Map<string, number>();
+  filaEncabezado.eachCell({ includeEmpty: false }, (celda, col) => {
+    const texto = celdaATexto(celda.value);
+    if (!texto) return;
+    mapa.set(normalizarEncabezado(texto), col);
+  });
+  return mapa;
+}
+
 /**
- * Lee el Excel externo con las notas de débito ya calculadas. Columnas (en
- * este orden): Fecha Nota Débito, Código de Proveedor, Fábrica, SAP,
- * Proveedor, Litros Enviados, $/Lts, Litros Transportados, $/Flete,
- * Bs x Lts Inicio, Bs x Lts Ajustado, Dif x Lts, Bs. a Pagar x Dif.
+ * Lee el Excel externo con las notas de débito ya calculadas. Las columnas
+ * se identifican por su encabezado (fila 1), no por posición fija, porque en
+ * la práctica el archivo real del usuario no siempre trae la columna
+ * "Código de Proveedor" (opcional — si falta, el emparejamiento cae directo
+ * a por nombre). Encabezados esperados: Fecha Nota Débito, Código de
+ * Proveedor (opcional), Fábrica, SAP, Proveedor, Litros Enviados, $/Lts,
+ * Litros Transportados, $/Flete, Bs x Lts Inicio, Bs x Lts Ajustado,
+ * Dif x Lts, Bs. a Pagar x Dif.
  *
  * El tipo de cada fila se infiere de cuál columna de litros trae dato
  * (Enviados -> leche, Transportados -> transporte); una fila con ambas o
  * ninguna se reporta como error y se omite. El emparejamiento contra los
  * registros ya cargados se intenta primero por código (normalizando ceros a
- * la izquierda) y, si no calza, por nombre — igual que pidió el usuario.
+ * la izquierda) y, si no calza o la columna no existe, por nombre.
  */
 export async function leerLibroNotasDebitoImportadas(
   bytes: Uint8Array,
@@ -144,9 +199,37 @@ export async function leerLibroNotasDebitoImportadas(
     return { filas: [], errores };
   }
 
+  const encabezados = mapaEncabezados(hoja.getRow(1));
+  const colFecha = encabezados.get('fecha nota debito');
+  const colCodigo = encabezados.get('codigo de proveedor');
+  const colFabrica = encabezados.get('fabrica');
+  const colSap = encabezados.get('sap');
+  const colProveedor = encabezados.get('proveedor');
+  const colLitrosEnviados = encabezados.get('litros enviados');
+  const colPrecioLts = encabezados.get('lts');
+  const colLitrosTransportados = encabezados.get('litros transportados');
+  const colPrecioFlete = encabezados.get('flete');
+  const colBsInicio = encabezados.get('bs x lts inicio');
+  const colBsAjustado = encabezados.get('bs x lts ajustado');
+  const colDif = encabezados.get('dif x lts');
+  const colBsAPagar = encabezados.get('bs a pagar x dif');
+
+  const faltantes: string[] = [];
+  if (!colFecha) faltantes.push('Fecha Nota Debito');
+  if (!colProveedor) faltantes.push('Proveedor');
+  if (!colLitrosEnviados) faltantes.push('Litros Enviados');
+  if (!colLitrosTransportados) faltantes.push('Litros Transportados');
+  if (!colBsAPagar) faltantes.push('Bs. a Pagar x Dif.');
+  if (faltantes.length > 0) {
+    errores.push(
+      `No se reconocen estas columnas en la fila 1 del Excel: ${faltantes.join(', ')}. Revisa que los encabezados coincidan (no hace falta el mismo orden, pero sí el mismo texto).`,
+    );
+    return { filas: [], errores };
+  }
+
   hoja.eachRow((fila, numeroFila) => {
     if (numeroFila === 1) return; // encabezado
-    const celdaFecha = fila.getCell(1).value;
+    const celdaFecha = fila.getCell(colFecha!).value;
     if (celdaFecha === null || celdaFecha === undefined || celdaFecha === '') return; // fila vacía
 
     const fechaNota = celdaAFechaIso(celdaFecha);
@@ -155,15 +238,14 @@ export async function leerLibroNotasDebitoImportadas(
       return;
     }
 
-    const codigoExcel = celdaATexto(fila.getCell(2).value);
-    const proveedorExcel = celdaATexto(fila.getCell(5).value);
-    if (!codigoExcel || !proveedorExcel) {
-      errores.push(`Fila ${numeroFila} (${fechaNota}): falta el código o el nombre del proveedor.`);
+    const proveedorExcel = celdaATexto(fila.getCell(colProveedor!).value);
+    if (!proveedorExcel) {
+      errores.push(`Fila ${numeroFila} (${fechaNota}): falta el nombre del proveedor.`);
       return;
     }
 
-    const litrosEnviados = celdaANumero(fila.getCell(6).value);
-    const litrosTransportados = celdaANumero(fila.getCell(8).value);
+    const litrosEnviados = celdaANumero(fila.getCell(colLitrosEnviados!).value);
+    const litrosTransportados = celdaANumero(fila.getCell(colLitrosTransportados!).value);
     const tieneLeche = litrosEnviados !== null && litrosEnviados > 0;
     const tieneTransporte = litrosTransportados !== null && litrosTransportados > 0;
     if (tieneLeche === tieneTransporte) {
@@ -173,7 +255,7 @@ export async function leerLibroNotasDebitoImportadas(
       return;
     }
 
-    const bsAPagar = celdaANumero(fila.getCell(13).value);
+    const bsAPagar = celdaANumero(fila.getCell(colBsAPagar!).value);
     if (bsAPagar === null) {
       errores.push(`Fila ${numeroFila} (${proveedorExcel}): "Bs. a Pagar x Dif." no es un número válido.`);
       return;
@@ -181,17 +263,17 @@ export async function leerLibroNotasDebitoImportadas(
 
     parseadas.push({
       fechaNota,
-      codigoExcel,
-      fabricaExcel: celdaATexto(fila.getCell(3).value),
-      sapExcel: celdaATexto(fila.getCell(4).value),
+      codigoExcel: colCodigo ? (celdaATexto(fila.getCell(colCodigo).value) ?? '') : '',
+      fabricaExcel: colFabrica ? celdaATexto(fila.getCell(colFabrica).value) : null,
+      sapExcel: colSap ? celdaATexto(fila.getCell(colSap).value) : null,
       proveedorExcel,
       litrosEnviados,
-      precioUsdLts: celdaANumero(fila.getCell(7).value),
+      precioUsdLts: colPrecioLts ? celdaANumero(fila.getCell(colPrecioLts).value) : null,
       litrosTransportados,
-      precioUsdFlete: celdaANumero(fila.getCell(9).value),
-      bsXLtsInicio: celdaANumero(fila.getCell(10).value),
-      bsXLtsAjustado: celdaANumero(fila.getCell(11).value),
-      difXLts: celdaANumero(fila.getCell(12).value),
+      precioUsdFlete: colPrecioFlete ? celdaANumero(fila.getCell(colPrecioFlete).value) : null,
+      bsXLtsInicio: colBsInicio ? celdaANumero(fila.getCell(colBsInicio).value) : null,
+      bsXLtsAjustado: colBsAjustado ? celdaANumero(fila.getCell(colBsAjustado).value) : null,
+      difXLts: colDif ? celdaANumero(fila.getCell(colDif).value) : null,
       centimos: Math.ceil(bsAPagar) * 100,
       tipo: tieneLeche ? 'leche' : 'transporte',
     });

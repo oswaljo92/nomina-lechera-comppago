@@ -26,30 +26,43 @@ separada en tres (Vista, Configuración, Comprobante) para que los botones
 se alineen bien en todos los tamaños de pantalla, la importación de notas
 de débito ya calculadas desde un Excel externo (empareja por código o por
 nombre con lo ya cargado y reemplaza el cálculo automático por tasas BCV),
-y la última tanda: 3 ajustes de contenido en la nota de débito como
-documento aparte (título, sin fecha de factura, sin la leyenda de monto
-repetido), redondeo hacia arriba del monto importado, y una columna nueva
-en la pestaña "Notas de Débito" para generar/descargar la ND directamente
-desde ahí.
+3 ajustes de contenido en la nota de débito como documento aparte (título,
+sin fecha de factura, sin la leyenda de monto repetido), redondeo hacia
+arriba del monto importado, una columna nueva en la pestaña "Notas de
+Débito" para generar/descargar la ND directamente desde ahí, separar
+concepto manual de configuración de ND en Comprobantes generales, y la
+última tanda: corrección del import de Excel real (el archivo del usuario
+no trae columna "Código de Proveedor", el parser ahora lee por nombre de
+encabezado en vez de posición fija), corrección de un bug de emparejamiento
+por nombre (un nombre corto calzaba por prefijo con uno largo de otro
+proveedor distinto), y una funcionalidad nueva: sumar automáticamente el
+monto de la ND cuando el mismo SAP (y la misma fábrica) aparece en 2+ filas
+del Excel, generando una sola nota de débito con desglose por línea, sin
+tocar la factura de cada código.
 
 ## 2. Estado actual
 
 Todo está implementado, tipado sin errores (`npm run check`), pasa
-`test:core`/`test:parser`, se probó a mano en el navegador con datos reales
-(tabla de "Comprobantes generales" a 1280px sin desbordamiento tras
-agregar la columna nueva "+", botón "+" confirmado que abre el modal de
-concepto manual directo en la pantalla sin navegar, botón "⚙" confirmado
-que sigue llevando a la pestaña Notas de Débito filtrada al proveedor,
-modo tarjeta a 375px con los 4 bloques de acciones bien separados), está
-commiteado y pusheado a `origin/master`, y compilado en
-`release/CompPago-1.6.0-windows.zip` (`npm run electron:build` completo).
+`test:core`/`test:parser` (con pruebas nuevas de `gruposNdPorSap`/
+`datosConNdPorSap`, incluida la mezcla leche+transporte), se probó a mano
+en el navegador con el Excel real del usuario (`entradas/ND CALCULADA.xlsx`,
+que no trae columna de código): el import que antes fallaba en todas las
+filas ahora funciona; "DIAMAGRO"/"DIAMAGRO, C.A." (mismo SAP, misma
+fábrica) se emparejaron correctamente por nombre tras el fix, y su ND
+combinada descargada mostró el total sumado (443.813,00 Bs) con el
+desglose "CÓDIGO 008169: 65.356,00 Bs" / "CÓDIGO 009120: 378.457,00 Bs";
+se confirmó que la factura individual de cada código sigue mostrando su
+propio monto (65.356,00 Bs), sin combinar litros/bruto. Está commiteado y
+pusheado a `origin/master`, y compilado en `release/CompPago-1.7.0-windows.zip`
+(`npm run electron:build` completo).
 
-**Versión actual: `1.6.0`** (subida en esta tanda, ver sección 3).
+**Versión actual: `1.7.0`** (subida en esta tanda, ver sección 3).
 
 Últimos commits:
 
 ```
-(este commit) Separa concepto manual de configuración de ND en Comprobantes generales; sube a 1.6.0
+(este commit) Corrige import de Excel sin columna de código y emparejamiento por nombre; suma ND por SAP; sube a 1.7.0
+92ea542 Separa concepto manual de configuración de ND en Comprobantes generales; sube a 1.6.0
 fcf0bc8 Muestra siempre la fecha de factura en la factura; título "COMPROBANTE"; sube a 1.5.2
 8d54813 Redondea la ND al bolívar entero, no al céntimo; sube a 1.5.1
 15c5650 Ajustes de contenido de la ND separada, redondeo hacia arriba, columna Generar ND; sube a 1.5.0
@@ -755,7 +768,7 @@ pantallas que arman el contexto):
   separada de este último y se confirmó que sigue mostrando solo su fecha
   propia, sin "Fecha de Factura" — no se rompió nada de la tanda anterior.
 
-### Esta sesión: separar "Concepto manual" de "Configurar ND" en Comprobantes generales
+### Sesión anterior (10): separar "Concepto manual" de "Configurar ND" en Comprobantes generales
 
 Tras la restructuración en pestañas de una tanda anterior, la columna
 "Comprobante" había quedado como: Vista / **Configuración (⚙, un solo
@@ -792,6 +805,112 @@ la nota de débito).
   clic en "⚙" sigue llevando a "Notas de Débito" filtrada al código de esa
   fila; en modo tarjeta a 375px los 4 bloques de acciones (Vista / + /
   ⚙ / Comprobante) se ven con buen espacio, sin apretarse.
+
+### Esta sesión: import de Excel real corregido, emparejamiento por nombre corregido, suma de ND por SAP
+
+El usuario reportó que el Excel real de ND (`entradas/ND CALCULADA.xlsx`,
+generado por su propio proceso, no un archivo de prueba) daba error al
+importarlo, y pidió que los códigos de SAP repetidos se sumen al generar
+los comprobantes.
+
+**Bug real: el parser asumía una columna que el archivo real no tiene**
+(`src/core/db/notaDebitoExcel.ts`) — el diseño original (de la tanda que
+agregó el import de Excel) asumía que la columna 2 siempre era "Código de
+Proveedor" (agregada a pedido del usuario en su momento). El archivo real
+que el usuario usa en la práctica **no tiene esa columna**: sus columnas
+son Fecha, Fábrica, SAP, Proveedor, Litros Enviados, ... (el orden
+original, sin el código). Leer por posición fija hacía que todo se
+desalineara — la columna "Fábrica" se leía como código, "SAP" como
+fábrica, "Proveedor" como SAP, "Litros Enviados" como proveedor, etc. — y
+el error final que veía el usuario era "debe traer litros enviados O
+litros transportados, no ambos ni ninguno" en todas las filas, porque las
+columnas de litros reales quedaban leyendo precios en su lugar.
+- **Corregido**: el parser ahora identifica cada columna **por el texto de
+  su encabezado** (fila 1), no por posición — así funciona con o sin la
+  columna "Código de Proveedor" (opcional), y no depende del orden exacto.
+  Se agregó `normalizarEncabezado()` (quita acentos/signos/mayúsculas) y
+  `mapaEncabezados()` para construir el mapa nombre→columna. Si faltan
+  columnas esenciales (Fecha, Proveedor, Litros Enviados/Transportados,
+  Bs. a Pagar x Dif.), se avisa con un mensaje claro en vez de fallar fila
+  por fila.
+
+**Bug real: un nombre corto calzaba por prefijo con uno largo de OTRO
+proveedor** — al probar con datos reales apareció el caso "DIAMAGRO" (un
+proveedor) vs "DIAMAGRO, C.A." (otro proveedor **distinto**, mismo SAP
+mismo dueño real pero registrado con dos nombres). El emparejamiento por
+nombre toleraba el truncado del PDF comparando en las dos direcciones
+(`a.startsWith(b) || b.startsWith(a)`), lo que hacía que el nombre corto
+"DIAMAGRO" (Excel) calzara por prefijo con el registro "DIAMAGRO, C.A."
+(PDF) — y viceversa —, dejando ambas filas como ambiguas ("2 candidatos")
+en vez de emparejar cada una con su propio código exacto.
+- **Corregido**: ahora se prueba primero el nombre **exacto** (normalizado);
+  solo si no hay ningún exacto se intenta el prefijo tolerante (para el
+  caso real de truncado del PDF), y esa tolerancia quedó restringida a una
+  sola dirección (el nombre del Excel puede ser más largo que el del PDF
+  truncado, nunca al revés) — evita que un nombre corto "adopte" por error
+  candidatos de un nombre largo no relacionado.
+
+**Nueva funcionalidad: sumar la ND cuando el mismo SAP se repite (misma
+fábrica)** (`src/core/receipt/notaDebitoSap.ts`, nuevo archivo) — se
+consultó con el usuario antes de construir esto, con ejemplos reales de su
+propio archivo (3 patrones encontrados: mismo SAP en leche+transporte,
+mismo SAP en fábricas distintas, mismo SAP y misma fábrica con nombres casi
+idénticos). Quedó definido así:
+- Se combina **solo cuando el SAP Y la fábrica coinciden** — el mismo SAP
+  en una fábrica distinta (ej. "AGROLACTEOS EL PRIVILEGIO" en Vigia y en
+  Barinas) se deja **separado**, a pedido explícito del usuario ("sepáralo
+  por fábricas por si se presenta más adelante").
+- Se combina **solo la nota de débito**, nunca la factura: cada código
+  sigue generando su propio comprobante con sus propios litros/bruto/
+  deducciones, exactamente igual que antes. Es automático (sin pantalla de
+  confirmación) porque el SAP es una señal confiable — a diferencia de los
+  vínculos/agrupaciones existentes (por RIF/cédula), que sí requieren
+  confirmación manual en Ajustes.
+- La ND combinada muestra **una línea por miembro** con el monto tal cual
+  lo trae el Excel de cada fila (sin recalcular nada) y el total sumado:
+  si todos los miembros son del mismo tipo, la línea dice "CÓDIGO N" (igual
+  que ya hace la agrupación del mismo tipo existente); si mezcla leche y
+  transporte, dice "Leche"/"Flete" (igual que el combinado leche+flete
+  existente). Reutiliza el tipo `NotaDebitoAgrupada` ya existente — no hizo
+  falta tocar `dibujo.ts` para el dibujo en sí, solo ampliar cuándo se
+  muestra el desglose (ver abajo).
+- Implementación: `gruposNdPorSap(filas)` agrupa las `NotaDebitoImportada`
+  ya emparejadas por `sapExcel`+`fabricaExcel` (2+ filas); `datosConNdPorSap`
+  reemplaza `notaDebito`/`notaDebitoCombinada`/`notaDebitoAgrupada` de un
+  `DatosComprobante` ya construido por la versión combinada del grupo, sin
+  tocar litros/bruto/deducciones. Ambas pantallas
+  (`SeccionComprobantesGenerales.tsx`, `SeccionNotasDebito.tsx`) ganan una
+  función `unidadParaNd(r)` — análoga a `unidadDe(r)` pero para las
+  acciones de ND específicamente (vista previa 🧾, "Descargar ND", ZIP ND) —
+  que aplica el grupo SAP si corresponde; las acciones de factura siguen
+  usando `unidadDe(r)` sin cambios.
+- **Ajuste necesario en `dibujo.ts`**: `dibujarNotaDebito` ocultaba el
+  desglose ("Leche: X Bs") **siempre**, sin condición (fix de una tanda
+  anterior, para no repetir un monto único). Con 2+ códigos reales
+  combinados por SAP, ese desglose deja de ser redundante — es la única
+  forma de ver qué códigos componen el total. Se cambió la condición para
+  ocultar el desglose **solo cuando tiene 1 línea o menos** (sigue oculto
+  para el caso de siempre, ND individual o con una sola fuente aplicable) y
+  mostrarlo cuando tiene 2+ (el caso SAP, y también ahora un combinado
+  leche+flete calculado por tasas con ambos lados aplicando, que antes
+  tampoco lo mostraba — cambio de comportamiento menor pero consistente
+  con el mismo criterio).
+- **Verificado de punta a punta con el archivo Excel real completo**
+  (`entradas/ND CALCULADA.xlsx`, 130 filas, cargando ambas nóminas reales
+  de leche y transporte): tras los dos fixes de parseo/emparejamiento, se
+  importó sin errores de columnas; "DIAMAGRO"/"DIAMAGRO, C.A." (SAP
+  3001137, ambos Vigia) emparejaron correctamente cada uno con su propio
+  código; se descargó la ND de "DIAMAGRO" (008169) y se leyó el PDF real:
+  título "NOTA DE DEBITO", total "443.813,00 Bs" (65.356 + 378.457,
+  redondeado), desglose "CÓDIGO 008169: 65.356,00 Bs" / "CÓDIGO 009120:
+  378.457,00 Bs"; se descargó también la factura normal de 008169 y se
+  confirmó que muestra sus propios litros (6.126) y su propio monto de ND
+  (65.356,00 Bs) sin combinar nada — exactamente el comportamiento
+  acordado. El caso mixto leche+transporte (etiquetas "Leche"/"Flete") no
+  tenía datos completos en este archivo real para probarlo en el navegador
+  (esas filas del Excel venían con la fecha en blanco, así que el parser
+  las descarta correctamente con un aviso) — se cubrió con una prueba
+  unitaria nueva en `scripts/test-core.ts` en su lugar.
 
 ## 4. Intentos fallidos / notas técnicas
 

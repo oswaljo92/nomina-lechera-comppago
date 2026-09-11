@@ -11,6 +11,7 @@ import { leerLibroNotasDebitoImportadas, type LecturaLibroNd } from '../../../co
 import { construirComprobante, type ContextoComprobante, type DatosComprobante } from '../../../core/receipt/comprobante.ts';
 import { construirComprobanteCombinado } from '../../../core/receipt/comprobanteCombinado.ts';
 import { construirComprobanteAgrupado } from '../../../core/receipt/comprobanteAgrupado.ts';
+import { datosConNdPorSap, gruposNdPorSap } from '../../../core/receipt/notaDebitoSap.ts';
 import { OPCIONES_DIBUJO } from '../../../core/receipt/dibujo.ts';
 import { generarNotasDebito, type Formato, type ItemAGenerar } from '../../salida/generar.ts';
 import { formatearBs, formatearEntero } from '../../../core/parser/numeros.ts';
@@ -158,10 +159,28 @@ export function SeccionNotasDebito({
     return datos.notaDebitoCombinada ? datos.notaDebitoCombinada.aplica : Boolean(datos.notaDebito?.aplica);
   }
 
+  // ── Notas de débito importadas que comparten SAP y fábrica: se tratan
+  //    como el mismo proveedor real solo para la ND (no para la factura,
+  //    que sigue generándose por separado por código) — ver notaDebitoSap.ts.
+  const registrosPorId = new Map([...registros, ...otrosRegistros].map((r) => [r.id, r]));
+  const gruposSap = gruposNdPorSap([
+    ...repo.notasDebitoImportadasDeNomina(db, nomina.id),
+    ...(otraNomina ? repo.notasDebitoImportadasDeNomina(db, otraNomina.id) : []),
+  ]);
+
+  function unidadParaNd(r: (typeof registros)[number]): { registroIds: string[]; datos: DatosComprobante } {
+    const grupo = gruposSap.get(r.id);
+    if (!grupo) return unidadDe(r);
+    return {
+      registroIds: grupo.miembros.map((m) => m.registroId),
+      datos: datosConNdPorSap(unidadDe(r).datos, grupo, registrosPorId),
+    };
+  }
+
   async function descargarSoloNd(registro: (typeof registros)[number]) {
     if (!usuario) return;
     setMensaje(null);
-    const u = unidadDe(registro);
+    const u = unidadParaNd(registro);
     if (!ndAplica(u.datos)) {
       setMensaje({ nivel: 'error', texto: 'Este proveedor no tiene una nota de débito calculable.' });
       return;
@@ -490,7 +509,7 @@ export function SeccionNotasDebito({
           }
         >
           <VistaPrevia
-            datos={unidadDe(registros.find((r) => r.id === dialogo.registroId)!).datos}
+            datos={unidadParaNd(registros.find((r) => r.id === dialogo.registroId)!).datos}
             opciones={OPCIONES_DIBUJO}
             cual="nd"
           />

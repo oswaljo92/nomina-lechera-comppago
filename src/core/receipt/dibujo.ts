@@ -749,11 +749,15 @@ export function dibujarNotaDebito(
   y += 6;
   if (aplica) {
     const centimosNd = ndAgr ? ndAgr.centimos : ndComb ? ndComb.centimos : (nd as { centimos: number }).centimos;
-    const { filasTabla } = datosDetalleNd(datos);
+    const { desglose, filasTabla } = datosDetalleNd(datos);
     const altoFila = 26;
-    // El desglose ("Leche: X Bs") se oculta en este documento — el monto ya
-    // está en el título de la caja, así que su alto no participa aquí.
-    const altoCaja = altoFila + altoDetalleNd(0, filasTabla.length);
+    // El desglose ("Leche: X Bs" / "CÓDIGO N: X Bs") solo aporta cuando hay
+    // 2+ líneas reales (ej. varios códigos combinados por SAP): con una sola
+    // línea repetiría el mismo monto que ya está en el título de la caja, así
+    // que esa se oculta; con 2+ sí se muestra, para que el total sea
+    // trazable por código/lado.
+    const ocultarDesglose = desglose.length <= 1;
+    const altoCaja = altoFila + altoDetalleNd(ocultarDesglose ? 0 : desglose.length, filasTabla.length);
 
     l.rect({ x: izq, y, ancho: ANCHO_UTIL, alto: altoCaja, borde: COLORES.verde, grosor: 1.4, radio: 5 });
     l.rect({ x: izq + 1, y: y + 1, ancho: ANCHO_UTIL - 2, alto: altoFila - 1, relleno: COLORES.verde });
@@ -769,7 +773,7 @@ export function dibujarNotaDebito(
       alineacion: 'der',
     });
     y += altoFila;
-    y = dibujarDetalleNd(l, datos, izq, y, true);
+    y = dibujarDetalleNd(l, datos, izq, y, ocultarDesglose);
   } else {
     const alto = 42;
     l.rect({

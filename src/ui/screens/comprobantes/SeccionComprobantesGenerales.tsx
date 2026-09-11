@@ -14,6 +14,7 @@ import {
 } from '../../../core/receipt/comprobante.ts';
 import { construirComprobanteCombinado } from '../../../core/receipt/comprobanteCombinado.ts';
 import { construirComprobanteAgrupado } from '../../../core/receipt/comprobanteAgrupado.ts';
+import { datosConNdPorSap, gruposNdPorSap } from '../../../core/receipt/notaDebitoSap.ts';
 import type { OpcionesDibujo } from '../../../core/receipt/dibujo.ts';
 import { nombreLote } from '../../../core/receipt/nombreArchivo.ts';
 import {
@@ -192,6 +193,28 @@ export function SeccionComprobantesGenerales({
     return { registroIds: [r.id], datos: datosDe(r), combinado: false };
   }
 
+  // ── Notas de débito importadas que comparten SAP y fábrica: se tratan
+  //    como el mismo proveedor real solo para la ND (no para la factura,
+  //    que sigue generándose por separado por código) — ver notaDebitoSap.ts.
+  const registrosPorId = new Map([...registros, ...otrosRegistros].map((r) => [r.id, r]));
+  const gruposSap = gruposNdPorSap([
+    ...repo.notasDebitoImportadasDeNomina(db, nomina.id),
+    ...(otraNomina ? repo.notasDebitoImportadasDeNomina(db, otraNomina.id) : []),
+  ]);
+
+  /** Igual que `unidadDe`, pero si el registro comparte SAP+fábrica con
+   * otro(s), la ND que devuelve es la combinada de todos ellos (misma nota,
+   * una línea por miembro, monto sumado tal cual el Excel). Solo para las
+   * acciones de "Vista"/"Comprobante" de ND — la factura usa `unidadDe`. */
+  function unidadParaNd(r: (typeof registros)[number]): { registroIds: string[]; datos: DatosComprobante } {
+    const grupo = gruposSap.get(r.id);
+    if (!grupo) return unidadDe(r);
+    return {
+      registroIds: grupo.miembros.map((m) => m.registroId),
+      datos: datosConNdPorSap(unidadDe(r).datos, grupo, registrosPorId),
+    };
+  }
+
   const fabricas = [...new Set(registros.map((r) => r.leido.fabricaCod))].sort();
 
   const visibles = registros.filter((r) => {
@@ -290,11 +313,11 @@ export function SeccionComprobantesGenerales({
     if (!usuario) return;
     setMensaje(null);
     const candidatosDescarga = registros.filter((r) => ids.includes(r.id));
-    const omitidos = candidatosDescarga.filter((r) => !ndAplica(unidadDe(r).datos)).length;
+    const omitidos = candidatosDescarga.filter((r) => !ndAplica(unidadParaNd(r).datos)).length;
     const items: ItemAGenerar[] = candidatosDescarga
-      .filter((r) => ndAplica(unidadDe(r).datos))
+      .filter((r) => ndAplica(unidadParaNd(r).datos))
       .map((r) => {
-        const u = unidadDe(r);
+        const u = unidadParaNd(r);
         return { registroIds: u.registroIds, datos: u.datos, numeroNomina: nomina.numero };
       });
 
@@ -437,7 +460,7 @@ export function SeccionComprobantesGenerales({
           <button
             className="btn chico"
             disabled={
-              elegidos.filter((r) => ndAplica(unidadDe(r).datos)).length === 0 ||
+              elegidos.filter((r) => ndAplica(unidadParaNd(r).datos)).length === 0 ||
               progreso !== null ||
               !puedo('generar-comprobante')
             }
@@ -474,11 +497,11 @@ export function SeccionComprobantesGenerales({
                 const contraparte = contraparteDe(r.leido.codigo);
                 const candidatoGrupo = candidatoGrupoPorCodigo.get(r.leido.codigo);
                 const grupo = grupoPorCodigo.get(r.leido.codigo);
-                // La unidad (individual o combinada) es la que de verdad
+                // La unidad (individual, combinada o SAP) es la que de verdad
                 // decide si hay ND que descargar aparte — el `nd` de arriba
                 // es solo del lado de esta fila, no del combinado.
-                const ndDescargable = ndAplica(unidadDe(r).datos);
-                const tieneNd = Boolean(r.notaDebito) || ndImportada.has(r.leido.codigo);
+                const ndDescargable = ndAplica(unidadParaNd(r).datos);
+                const tieneNd = Boolean(r.notaDebito) || ndImportada.has(r.leido.codigo) || gruposSap.has(r.id);
                 return (
                   <tr key={r.id} className={seleccion.has(r.id) ? 'elegida' : undefined}>
                     <td className="selector">
@@ -787,7 +810,7 @@ export function SeccionComprobantesGenerales({
               >
                 Descargar factura
               </button>
-              {ndAplica(unidadDe(registroPrevia).datos) && (
+              {ndAplica(unidadParaNd(registroPrevia).datos) && (
                 <button
                   className="btn primario"
                   disabled={!puedo('generar-comprobante')}
@@ -799,7 +822,11 @@ export function SeccionComprobantesGenerales({
             </>
           }
         >
-          <VistaPrevia datos={unidadDe(registroPrevia).datos} opciones={opciones} cual={dialogo.cual} />
+          <VistaPrevia
+            datos={dialogo.cual === 'nd' ? unidadParaNd(registroPrevia).datos : unidadDe(registroPrevia).datos}
+            opciones={opciones}
+            cual={dialogo.cual}
+          />
         </Modal>
       )}
 

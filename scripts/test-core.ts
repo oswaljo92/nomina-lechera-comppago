@@ -39,6 +39,8 @@ import {
 import { construirComprobanteAgrupado } from '../src/core/receipt/comprobanteAgrupado.ts';
 import { construirComprobante, type ContextoComprobante } from '../src/core/receipt/comprobante.ts';
 import { normalizarCodigo } from '../src/core/db/notaDebitoExcel.ts';
+import { datosConNdPorSap, gruposNdPorSap } from '../src/core/receipt/notaDebitoSap.ts';
+import type { NotaDebitoImportada } from '../src/core/types.ts';
 import { sha256DeBytes } from '../src/core/auth/hash.ts';
 import {
   formatearBs,
@@ -650,6 +652,138 @@ console.log(`\n${B}Nota de débito importada${N}`);
   ok(
     comprobanteImportado.notaDebito?.aplica === true && comprobanteImportado.notaDebito.centimos === 123456,
     'construirComprobante usa el override importado de punta a punta',
+  );
+}
+
+// ═══ Nota de débito: mismo SAP + misma fábrica se suman ═══
+console.log(`\n${B}Nota de débito: mismo SAP se suma (misma fábrica)${N}`);
+{
+  const otroLeche = registrosLeche.find(
+    (r) => r.leido.codigo !== prolamar.leido.codigo && r.leido.codigo !== grippi.leido.codigo,
+  )!;
+  const rutaLibre = repo.registrosDeNomina(db, idTransporte)[0]!;
+
+  const filaBase: Omit<NotaDebitoImportada, 'registroId' | 'tipo' | 'centimos' | 'fabricaExcel'> = {
+    id: 'ndi_test_1',
+    nominaId: leche.id,
+    codigoExcel: '',
+    proveedorExcel: 'DIAMAGRO',
+    sapExcel: '3001137',
+    fechaNota: '2026-08-04',
+    litrosEnviados: null,
+    litrosTransportados: null,
+    precioUsdLts: null,
+    precioUsdFlete: null,
+    bsXLtsInicio: null,
+    bsXLtsAjustado: null,
+    difXLts: null,
+    emparejamiento: 'nombre',
+  };
+  const filaA: NotaDebitoImportada = {
+    ...filaBase,
+    id: 'ndi_test_a',
+    registroId: prolamar.id,
+    tipo: 'leche',
+    fabricaExcel: 'VIGIA',
+    centimos: 6535600,
+  };
+  const filaB: NotaDebitoImportada = {
+    ...filaBase,
+    id: 'ndi_test_b',
+    registroId: grippi.id,
+    tipo: 'leche',
+    fabricaExcel: 'VIGIA',
+    centimos: 37845700,
+  };
+  const filaOtraFabrica: NotaDebitoImportada = {
+    ...filaBase,
+    id: 'ndi_test_c',
+    registroId: otroLeche.id,
+    tipo: 'leche',
+    sapExcel: '3002290',
+    fabricaExcel: 'BARINAS',
+    centimos: 1000000,
+  };
+  const filaMismoSapOtraFabrica: NotaDebitoImportada = {
+    ...filaBase,
+    id: 'ndi_test_d',
+    registroId: rutaLibre.id,
+    tipo: 'transporte',
+    sapExcel: '3002290',
+    fabricaExcel: 'VIGIA',
+    centimos: 2000000,
+  };
+
+  const grupos = gruposNdPorSap([filaA, filaB, filaOtraFabrica, filaMismoSapOtraFabrica]);
+  ok(grupos.get(prolamar.id)?.centimosTotal === 44381300, 'Suma los céntimos de ambas filas tal cual el Excel');
+  ok(grupos.get(grippi.id)?.centimosTotal === 44381300, 'El otro miembro del grupo ve el mismo total');
+  ok(!grupos.has(otroLeche.id), 'Mismo SAP en otra fábrica no se agrupa con nada (fila sola)');
+  ok(!grupos.has(rutaLibre.id), 'Mismo SAP que otroLeche pero distinta fábrica tampoco se agrupa entre sí');
+
+  const registrosPorId = new Map([
+    [prolamar.id, prolamar],
+    [grippi.id, grippi],
+  ]);
+  const datosBase = construirComprobante(prolamar.leido, prolamar.manuales, null, {
+    catalogo: repo.catalogoMapa(db),
+    empresaPorFabrica: (cod) => repo.empresaDeFabrica(db, cod),
+    nombreCompleto: () => undefined,
+    tasas: repo.tasasMapa(db),
+    ndImportada: new Map(),
+    fechaFactura: leche.fechaFin,
+    titulo: 'PAGO DE LECHE FRESCA',
+    tipo: 'leche',
+    anio: leche.anio,
+    numero: leche.numero,
+    fechaIni: leche.fechaIni,
+    fechaFin: leche.fechaFin,
+  });
+  const datosConSap = datosConNdPorSap(datosBase, grupos.get(prolamar.id)!, registrosPorId);
+  ok(datosConSap.notaDebito === null, 'La ND individual se reemplaza por la del grupo');
+  ok(datosConSap.notaDebitoAgrupada?.centimos === 44381300, 'El total combinado queda en notaDebitoAgrupada');
+  ok(
+    datosConSap.notaDebitoAgrupada?.porCodigo.length === 2,
+    'Una línea por miembro del grupo',
+    String(datosConSap.notaDebitoAgrupada?.porCodigo.length),
+  );
+  ok(
+    Boolean(
+      datosConSap.notaDebitoAgrupada?.porCodigo.every(
+        (p) => p.resultado?.aplica && p.resultado.origen === 'importado',
+      ),
+    ),
+    'Cada línea queda marcada como importada (no fabrica tasas)',
+  );
+  ok(
+    datosConSap.bruto === datosBase.bruto && datosConSap.litrosTotal === datosBase.litrosTotal,
+    'No toca litros/bruto — solo la ND cambia, la factura de cada código sigue separada',
+  );
+
+  // Mismo SAP, pero un miembro es leche y el otro transporte (ej. RUBEN
+  // DARIO GOMEZ GOMEZ en el Excel real): las líneas se etiquetan Leche/Flete
+  // en vez de por código, igual que el combinado leche+flete de siempre.
+  const filaLeche: NotaDebitoImportada = { ...filaA, id: 'ndi_test_mix_leche', tipo: 'leche' };
+  const filaTransporte: NotaDebitoImportada = {
+    ...filaBase,
+    id: 'ndi_test_mix_transporte',
+    registroId: rutaLibre.id,
+    tipo: 'transporte',
+    fabricaExcel: 'VIGIA',
+    centimos: 9000000,
+  };
+  const gruposMixtos = gruposNdPorSap([filaLeche, filaTransporte]);
+  const datosConSapMixto = datosConNdPorSap(
+    datosBase,
+    gruposMixtos.get(prolamar.id)!,
+    new Map([...registrosPorId, [rutaLibre.id, rutaLibre]]),
+  );
+  ok(
+    Boolean(
+      datosConSapMixto.notaDebitoAgrupada?.porCodigo.some((p) => p.codigo === 'Leche') &&
+        datosConSapMixto.notaDebitoAgrupada?.porCodigo.some((p) => p.codigo === 'Flete'),
+    ),
+    'Mezcla leche+transporte etiqueta Leche/Flete en vez de por código',
+    JSON.stringify(datosConSapMixto.notaDebitoAgrupada?.porCodigo.map((p) => p.codigo)),
   );
 }
 
