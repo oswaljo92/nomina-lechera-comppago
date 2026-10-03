@@ -1022,20 +1022,22 @@ la tabla (aparte de descargar PDF/imagen), ambos botones pegados al nombre.
 
 ### Esta sesión: ND quitadas (restaurables), encabezado fijo, buscador
 
-- **Quitar ya no borra**: antes  hacía DELETE
-  (se perdía la fila). Ahora la tabla  tiene
-   (NULL = vigente).  la marca,
-   la reactiva (falla con mensaje si el
+- **Quitar ya no borra**: antes `eliminarNotaDebitoImportada` hacía DELETE
+  (se perdía la fila). Ahora la tabla `notas_debito_importadas` tiene
+  `quitada_en TEXT` (NULL = vigente). `quitarNotaDebitoImportada` la marca,
+  `restaurarNotaDebitoImportada` la reactiva (falla con mensaje si el
   proveedor ya tiene OTRA vigente, p. ej. tras reimportar), y
-   queda solo para borrar definitivo desde el
-  apartado de quitadas (con ).
+  `eliminarNotaDebitoImportada` queda solo para borrar definitivo desde el
+  apartado de quitadas (con `Confirmar`).
 - Todas las consultas que alimentan ND/emparejamiento
-  (, , y por ende
-  ) filtran ; nueva
-  .
-- **Migración** (en , sin subir VERSION_ESQUEMA):
-   si falta,  y nuevo índice único parcial
-  . El upsert de  usa ese
+  (`notasDebitoImportadasDeNomina`, `ndImportadaMapa`, y por ende
+  `gruposNdPorSap`) filtran `quitada_en IS NULL`; nueva
+  `notasDebitoQuitadasDeNomina`.
+- **Migración** (en `BaseDatos.migrar`, sin subir VERSION_ESQUEMA):
+  `ALTER TABLE … ADD COLUMN quitada_en` si falta, `DROP INDEX
+  idx_ndi_registro_unico` y nuevo índice único parcial
+  `idx_ndi_registro_vigente (registro_id) WHERE registro_id IS NOT NULL AND
+  quitada_en IS NULL`. El upsert de `guardarNotasDebitoImportadas` usa ese
   mismo WHERE en su ON CONFLICT (tienen que coincidir). El índice se crea en
   migrar y NO en ESQUEMA_SQL, porque en una base vieja la columna aún no
   existe cuando corre el esquema. Probado: base creada con el código de
@@ -1044,13 +1046,14 @@ la tabla (aparte de descargar PDF/imagen), ambos botones pegados al nombre.
 - UI: tarjeta «Notas de débito quitadas (N)» bajo la tabla (solo si hay),
   con Restaurar / Eliminar; avisos al quitar y restaurar; etiquetas nuevas en
   la Bitácora.
-- **Encabezado fijo**: los  ya eran sticky, pero   (overflow-x) los anclaba a sí misma.  tiene scroll propio
-  (); en modo tarjeta (≤960px) se quita.
-- **Buscador** de la tabla de ND:  = 50% del ancho (100% en
+- **Encabezado fijo**: los `th` ya eran sticky, pero `.tabla-envoltura`
+  (overflow-x) los anclaba a sí misma. `.envoltura-nd` tiene scroll propio
+  (`max-height: calc(100vh - 140px)`); en modo tarjeta (≤960px) se quita.
+- **Buscador** de la tabla de ND: `.buscador-mitad` = 50% del ancho (100% en
   tarjeta).
-- Al compilar,  respaldó y restauró la
-   que el usuario volvió a tener en win-unpacked (idéntica byte
-  a byte tras el build).
+- Al compilar, `datos-escritorio.mjs` respaldó y restauró la `lectorocr.db`
+  que el usuario volvió a tener en win-unpacked (idéntica byte a byte tras el
+  build).
 
 ## 4. Intentos fallidos / notas técnicas
 
