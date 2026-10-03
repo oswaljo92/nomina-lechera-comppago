@@ -40,6 +40,7 @@ import { construirComprobanteAgrupado } from '../src/core/receipt/comprobanteAgr
 import { construirComprobante, type ContextoComprobante } from '../src/core/receipt/comprobante.ts';
 import { decimalesDeFormato, normalizarCodigo, redondearComoExcel } from '../src/core/db/notaDebitoExcel.ts';
 import { datosConNdPorSap, gruposNdPorSap } from '../src/core/receipt/notaDebitoSap.ts';
+import { dibujarNotaDebito, OPCIONES_DIBUJO } from '../src/core/receipt/dibujo.ts';
 import { validarAtajo, textoAtajo } from '../src/ui/util/atajosReglas.ts';
 import type { NotaDebitoImportada } from '../src/core/types.ts';
 import { sha256DeBytes } from '../src/core/auth/hash.ts';
@@ -748,6 +749,13 @@ console.log(`\n${B}Nota de débito: mismo SAP se suma (misma fábrica)${N}`);
     fechaFin: leche.fechaFin,
   });
   const datosConSap = datosConNdPorSap(datosBase, grupos.get(prolamar.id)!, registrosPorId);
+  const textosNd = dibujarNotaDebito(datosConSap, OPCIONES_DIBUJO, (t, tam) => t.length * tam * 0.5)
+    .primitivas.flatMap((p) => (p.tipo === 'texto' ? [p.texto] : []));
+  ok(
+    textosNd.includes('Fecha de Nota de débito 04/08/2026'),
+    'La ND sumada por SAP imprime la fecha de nota que trae el Excel',
+    JSON.stringify(textosNd.filter((t) => t.includes('Fecha'))),
+  );
   ok(datosConSap.notaDebito === null, 'La ND individual se reemplaza por la del grupo');
   ok(datosConSap.notaDebitoAgrupada?.centimos === 44381300, 'El total combinado queda en notaDebitoAgrupada');
   ok(

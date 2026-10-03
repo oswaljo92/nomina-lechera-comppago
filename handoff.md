@@ -51,14 +51,15 @@ fiscal · Folio …" en el pie; Ctrl+Shift+F / Ctrl+Shift+L (teclas reales)
 copiaron 2 imágenes y 2 nombres por separado; la tabla de ND no desborda en
 1150/1280/1440 px y en tarjeta reparte los botones a todo el ancho; el
 modal de emparejar usa el buscador de la app. Está commiteado y pusheado a
-`origin/master`, y compilado en `release/CompPago-1.9.1-windows.zip`.
+`origin/master`, y compilado en `release/CompPago-1.9.2-windows.zip`.
 
-**Versión actual: `1.9.1`** (1.9.1 = columna Dif x Lts en "A Modo Informativo", ver sección 3).
+**Versión actual: `1.9.2`** (1.9.1 = columna Dif x Lts en "A Modo Informativo"; 1.9.2 = la ND independiente imprime la fecha de nota del Excel también cuando se arma sumando códigos/SAP, ver sección 3).
 
 Últimos commits:
 
 ```
-(este commit) Agrega columna Dif x Lts a la tabla A Modo Informativo de la ND; sube a 1.9.1
+(este commit) La ND independiente muestra la fecha de nota del Excel también en ND sumadas por SAP/agrupadas (la factura no cambia); sube a 1.9.2
+4d46138 Agrega columna Dif x Lts a la tabla A Modo Informativo de la ND; sube a 1.9.1
 b364514 Atajos configurables y copia múltiple, tabla "A Modo Informativo" en la ND, "Sin efecto fiscal", tabla ND reordenada, buscador al emparejar; sube a 1.9.0
 999dafd ND importada con los números exactos que muestra el Excel; botones copiar nombre/imagen; sube a 1.8.0
 bff9260 Corrige import de Excel sin columna de código y emparejamiento por nombre; suma ND por SAP; sube a 1.7.0
@@ -996,6 +997,13 @@ la tabla (aparte de descargar PDF/imagen), ambos botones pegados al nombre.
    `resolverNotaDebito` desde `ndImportadaMapa` (ahora también lee litros,
    precios y Bs x Lts) y `datosConNdPorSap`. Solo para ND importadas; la
    factura no cambia. Pie de la ND: "Sin efecto fiscal  ·  Folio …".
+   **1.9.2:** la línea "Fecha de Nota de débito" no salía en la ND
+   independiente cuando la nota venía como `notaDebitoAgrupada` (suma por
+   SAP — ej. NANCY leche+flete — o agrupado del mismo tipo). Ahora, solo en
+   la ND (`soloFechaNota`), se toma la `fechaNota` de cada parte (la del
+   Excel si es importada): una línea si todas coinciden, una por
+   lado/código si difieren. La rama de la factura quedó exactamente igual
+   que antes (pedido explícito del usuario: "no afecta a la factura").
 5. **Emparejar** (`ModalResolverNotaDebito.tsx`): buscador con el estilo de
    la app + lista de tarjetas seleccionables (doble clic confirma); primero
    los que comparten palabras con el nombre del Excel.

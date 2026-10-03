@@ -305,7 +305,8 @@ function dibujarBloqueIdentificacion(
   if (!soloFechaNota) {
     lineasFecha.push(`Fecha de Factura ${fechaAMostrar(datos.fechaFactura)}`);
   }
-  if (opciones.mostrarNotaDebito) {
+  if (opciones.mostrarNotaDebito && !soloFechaNota) {
+    // Factura: sin cambios (la ND es un documento aparte).
     if (datos.notaDebitoCombinada) {
       const { leche, transporte } = datos.notaDebitoCombinada;
       if (leche?.aplica) {
@@ -316,6 +317,31 @@ function dibujarBloqueIdentificacion(
       }
     } else if (datos.notaDebito?.aplica) {
       lineasFecha.push(`Fecha de Nota de débito ${fechaAMostrar(datos.notaDebito.fechaNota)}`);
+    }
+  } else if (opciones.mostrarNotaDebito) {
+    // Nota de débito independiente: fecha de cada parte (la importada trae
+    // la de su fila del Excel), también cuando la ND se arma sumando códigos
+    // (agrupado / mismo SAP). Si todas coinciden se imprime una sola línea;
+    // si no, una por lado/código para que cada fecha quede identificada.
+    const fechas: { etiqueta: string; fecha: string }[] = [];
+    if (datos.notaDebitoAgrupada) {
+      for (const p of datos.notaDebitoAgrupada.porCodigo) {
+        if (p.resultado?.aplica) fechas.push({ etiqueta: p.codigo, fecha: p.resultado.fechaNota });
+      }
+    } else if (datos.notaDebitoCombinada) {
+      const { leche, transporte } = datos.notaDebitoCombinada;
+      if (leche?.aplica) fechas.push({ etiqueta: 'Leche', fecha: leche.fechaNota });
+      if (transporte?.aplica) fechas.push({ etiqueta: 'Flete', fecha: transporte.fechaNota });
+    } else if (datos.notaDebito?.aplica) {
+      fechas.push({ etiqueta: '', fecha: datos.notaDebito.fechaNota });
+    }
+    const distintas = new Set(fechas.map((f) => f.fecha));
+    if (distintas.size === 1) {
+      lineasFecha.push(`Fecha de Nota de débito ${fechaAMostrar(fechas[0]!.fecha)}`);
+    } else {
+      for (const f of fechas) {
+        lineasFecha.push(`${f.etiqueta} · Fecha de Nota de débito ${fechaAMostrar(f.fecha)}`);
+      }
     }
   }
   for (const linea of lineasFecha) {
