@@ -26,6 +26,7 @@ import {
 import { fechaAMostrar, formatearBs } from '../../core/parser/numeros.ts';
 import { esArchivoSqlite } from '../../core/db/basedatos.ts';
 import { useRespaldarYBorrar } from '../components/RespaldarYBorrar.tsx';
+import { ConfigAtajos } from '../components/ConfigAtajos.tsx';
 import type { ConceptoCatalogo, Empresa, TipoNomina } from '../../core/types.ts';
 
 type Pestana = 'empresas' | 'conceptos' | 'nombres' | 'usuarios' | 'datos' | 'sistema';
@@ -1310,6 +1311,8 @@ function SeccionSistema() {
 
   return (
     <>
+      <ConfigAtajos />
+
       <Tarjeta titulo="Acceso y trazabilidad">
         <p className="tenue">
           Cada persona entra con su propio usuario y contraseña. Para cambiar la tuya, abre «Mi

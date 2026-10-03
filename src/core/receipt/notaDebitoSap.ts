@@ -1,5 +1,5 @@
 import type { RegistroGuardado } from '../db/repo.ts';
-import type { NotaDebitoCalculada, NotaDebitoImportada, TipoNomina } from '../types.ts';
+import type { InformativoNdImportada, NotaDebitoCalculada, NotaDebitoImportada, TipoNomina } from '../types.ts';
 import type { DatosComprobante } from './comprobante.ts';
 
 /**
@@ -14,7 +14,13 @@ import type { DatosComprobante } from './comprobante.ts';
 export interface GrupoNdSap {
   sap: string;
   fabrica: string;
-  miembros: Array<{ registroId: string; tipo: TipoNomina; centimos: number; fechaNota: string }>;
+  miembros: Array<{
+    registroId: string;
+    tipo: TipoNomina;
+    centimos: number;
+    fechaNota: string;
+    informativo: Omit<InformativoNdImportada, 'codigo'>;
+  }>;
   centimosTotal: number;
 }
 
@@ -41,6 +47,13 @@ export function gruposNdPorSap(filas: NotaDebitoImportada[]): Map<string, GrupoN
         tipo: f.tipo,
         centimos: f.centimos,
         fechaNota: f.fechaNota,
+        informativo: {
+          tipo: f.tipo,
+          litros: f.tipo === 'leche' ? f.litrosEnviados : f.litrosTransportados,
+          precioUsd: f.tipo === 'leche' ? f.precioUsdLts : f.precioUsdFlete,
+          bsXLtsInicio: f.bsXLtsInicio,
+          bsXLtsAjustado: f.bsXLtsAjustado,
+        },
       })),
       centimosTotal: lista.reduce((a, f) => a + f.centimos, 0),
     };
@@ -87,6 +100,7 @@ export function datosConNdPorSap(
       diferenciaTasa: 0,
       montoUsd: 0,
       centimos: m.centimos,
+      informativo: { codigo: registro?.leido.codigo ?? '', ...m.informativo },
     };
     return { codigo: etiqueta, resultado };
   });

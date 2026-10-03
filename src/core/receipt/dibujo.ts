@@ -1,6 +1,6 @@
-import { fechaAMostrar, formatearBs, formatearDecimal, formatearEntero } from '../parser/numeros.ts';
+import { fechaAMostrar, formatearBs, formatearDecimal, formatearEntero, formatearFijo } from '../parser/numeros.ts';
 import type { DatosComprobante } from './comprobante.ts';
-import type { NotaDebitoCalculada } from '../types.ts';
+import type { InformativoNdImportada, NotaDebitoCalculada } from '../types.ts';
 
 /**
  * Descripción del comprobante como una lista de primitivas de dibujo.
@@ -709,6 +709,77 @@ export function dibujarComprobante(
   return { primitivas: l.primitivas, alto: Math.round(yPie + MARGEN - 8) };
 }
 
+/** Filas del Excel de ND (solo las importadas) que respaldan la nota:
+ * leche primero, después flete, en el orden en que aparecen. */
+function lineasInformativas(datos: DatosComprobante): InformativoNdImportada[] {
+  const resultados: (NotaDebitoCalculada | null | undefined)[] = [];
+  if (datos.notaDebitoAgrupada) {
+    for (const p of datos.notaDebitoAgrupada.porCodigo) resultados.push(p.resultado?.aplica ? p.resultado : null);
+  } else if (datos.notaDebitoCombinada) {
+    const { leche, transporte } = datos.notaDebitoCombinada;
+    resultados.push(leche?.aplica ? leche : null, transporte?.aplica ? transporte : null);
+  } else if (datos.notaDebito?.aplica) {
+    resultados.push(datos.notaDebito);
+  }
+  const lineas = resultados.flatMap((r) => (r?.informativo ? [r.informativo] : []));
+  return [...lineas.filter((x) => x.tipo === 'leche'), ...lineas.filter((x) => x.tipo !== 'leche')];
+}
+
+/**
+ * Tabla "A Modo Informativo" bajo la caja de la ND independiente: código,
+ * servicio (leche/flete), litros, precio en $ y Bs x Lts inicio/ajustado,
+ * tal cual el Excel importado. Solo informa, no participa en el monto.
+ */
+function dibujarTablaInformativa(
+  l: Lienzo,
+  lineas: InformativoNdImportada[],
+  izq: number,
+  der: number,
+  y0: number,
+): number {
+  let y = y0;
+  l.texto('A Modo Informativo', izq, y + 9, { tam: 9, peso: 'bold', color: COLORES.verde });
+  y += 16;
+
+  const altoEnc = 18;
+  const altoFila = 15;
+  const alto = altoEnc + lineas.length * altoFila;
+  l.rect({ x: izq, y, ancho: der - izq, alto, borde: COLORES.lineaFuerte, grosor: 0.6, radio: 4 });
+  l.rect({ x: izq + 0.5, y: y + 0.5, ancho: der - izq - 1, alto: altoEnc - 0.5, relleno: COLORES.verdeClaro });
+
+  // [texto de encabezado, x, alineación]
+  const cols: [string, number, 'izq' | 'der'][] = [
+    ['CÓDIGO', izq + 10, 'izq'],
+    ['SERVICIO', izq + 78, 'izq'],
+    ['LITROS', izq + 205, 'der'],
+    ['PRECIO $', izq + 285, 'der'],
+    ['BS X LTS INICIO', izq + 395, 'der'],
+    ['BS X LTS AJUSTADO', der - 10, 'der'],
+  ];
+  cols.forEach(([h, x, a]) =>
+    l.texto(h, x, y + 12, { tam: 6.5, peso: 'bold', color: COLORES.verde, alineacion: a }),
+  );
+  y += altoEnc;
+
+  const fijo = (n: number | null, dec: number) => (n === null ? '—' : formatearFijo(n, dec));
+  lineas.forEach((ln, i) => {
+    if (i > 0) l.linea(izq + 6, y, der - 6);
+    const valores = [
+      ln.codigo,
+      ln.tipo === 'leche' ? 'Leche' : 'Flete',
+      fijo(ln.litros, 0),
+      fijo(ln.precioUsd, 3),
+      fijo(ln.bsXLtsInicio, 3),
+      fijo(ln.bsXLtsAjustado, 3),
+    ];
+    valores.forEach((v, c) =>
+      l.texto(v, cols[c]![1], y + 10.5, { tam: 7.5, color: COLORES.tinta, alineacion: cols[c]![2] }),
+    );
+    y += altoFila;
+  });
+  return y;
+}
+
 /**
  * Nota de débito como documento independiente: mismo encabezado de
  * empresa/proveedor que el comprobante de pago completo, pero el cuerpo se
@@ -774,6 +845,12 @@ export function dibujarNotaDebito(
     });
     y += altoFila;
     y = dibujarDetalleNd(l, datos, izq, y, ocultarDesglose);
+
+    const informativas = lineasInformativas(datos);
+    if (informativas.length > 0) {
+      y += 22;
+      y = dibujarTablaInformativa(l, informativas, izq, der, y);
+    }
   } else {
     const alto = 42;
     l.rect({
@@ -810,7 +887,8 @@ export function dibujarNotaDebito(
 
   const yPie = Math.max(y + 14, ALTO_MINIMO_PT - MARGEN - 12);
   l.linea(izq, yPie - 10, der);
-  l.texto(`Folio ${datos.folio}`, der, yPie, { tam: 7, color: COLORES.suave, alineacion: 'der' });
+  // La ND es solo informativa para el productor: se aclara junto al folio.
+  l.texto(`Sin efecto fiscal  ·  Folio ${datos.folio}`, der, yPie, { tam: 7, color: COLORES.suave, alineacion: 'der' });
 
   return { primitivas: l.primitivas, alto: Math.round(yPie + MARGEN - 8) };
 }

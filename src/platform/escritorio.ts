@@ -19,6 +19,7 @@ export interface PuenteEscritorio {
   abrirArchivo(extensiones: string[]): Promise<ArchivoAbierto | null>;
   copiarTexto(texto: string): Promise<void>;
   copiarImagenPng(bytes: Uint8Array): Promise<void>;
+  historialPortapapeles(): Promise<boolean | null>;
 }
 
 declare global {
@@ -73,6 +74,7 @@ export async function crearPlataformaEscritorio(puente: PuenteEscritorio): Promi
       async copiarImagen(png) {
         await puente.copiarImagenPng(new Uint8Array(await png.arrayBuffer()));
       },
+      historialActivo: () => puente.historialPortapapeles(),
     },
   };
 }

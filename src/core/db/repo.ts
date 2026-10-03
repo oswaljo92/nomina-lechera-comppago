@@ -17,6 +17,7 @@ import type {
   RegistroLeido,
   TasaBcv,
   TipoNomina,
+  NdImportadaResumen,
 } from '../types.ts';
 
 // El alta y la autenticación de usuarios viven en src/core/auth/usuarios.ts.
@@ -1186,16 +1187,37 @@ export function notasDebitoImportadasDeNomina(db: BaseDatos, nominaId: string): 
 export function ndImportadaMapa(
   db: BaseDatos,
   nominaId: string,
-): Map<string, { centimos: number; fechaNota: string }> {
+): Map<string, NdImportadaResumen> {
   const filas = db.todos<Fila>(
-    `SELECT r.codigo AS codigo, ndi.centimos AS centimos, ndi.fecha_nota AS fecha_nota
+    `SELECT r.codigo AS codigo, ndi.centimos AS centimos, ndi.fecha_nota AS fecha_nota,
+            ndi.tipo AS tipo, ndi.litros_enviados AS litros_enviados,
+            ndi.litros_transportados AS litros_transportados, ndi.precio_usd_lts AS precio_usd_lts,
+            ndi.precio_usd_flete AS precio_usd_flete, ndi.bs_x_lts_inicio AS bs_x_lts_inicio,
+            ndi.bs_x_lts_ajustado AS bs_x_lts_ajustado
      FROM notas_debito_importadas ndi
      JOIN registros r ON r.id = ndi.registro_id
      WHERE ndi.nomina_id = ? AND ndi.registro_id IS NOT NULL`,
     [nominaId],
   );
+  const num = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));
   return new Map(
-    filas.map((f) => [String(f['codigo']), { centimos: Number(f['centimos']), fechaNota: String(f['fecha_nota']) }]),
+    filas.map((f) => {
+      const tipo = f['tipo'] === 'transporte' ? 'transporte' : 'leche';
+      return [
+        String(f['codigo']),
+        {
+          centimos: Number(f['centimos']),
+          fechaNota: String(f['fecha_nota']),
+          informativo: {
+            tipo,
+            litros: num(tipo === 'leche' ? f['litros_enviados'] : f['litros_transportados']),
+            precioUsd: num(tipo === 'leche' ? f['precio_usd_lts'] : f['precio_usd_flete']),
+            bsXLtsInicio: num(f['bs_x_lts_inicio']),
+            bsXLtsAjustado: num(f['bs_x_lts_ajustado']),
+          },
+        },
+      ];
+    }),
   );
 }
 

@@ -11,6 +11,7 @@ import type {
   RegistroLeido,
   ResultadoNotaDebito,
   TipoNomina,
+  NdImportadaResumen,
 } from '../types.ts';
 
 /** Datos ya resueltos que el comprobante dibuja sin volver a calcular nada. */
@@ -70,7 +71,7 @@ export interface ContextoComprobante {
   /** Código de registro -> nota de débito importada de Excel (si existe),
    * que reemplaza el cálculo por tasas para ese código. Vacío en la
    * mayoría de las nóminas. */
-  ndImportada: Map<string, { centimos: number; fechaNota: string }>;
+  ndImportada: Map<string, NdImportadaResumen>;
   /** Fecha de factura configurada en "Fechas del documento" para esta
    * nómina — se imprime en la factura siempre, tenga o no ND aplicable. */
   fechaFactura: string;

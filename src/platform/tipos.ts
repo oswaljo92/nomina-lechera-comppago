@@ -44,5 +44,8 @@ export interface Plataforma {
     copiarTexto(texto: string): Promise<void>;
     /** `png` debe ser una imagen PNG. */
     copiarImagen(png: Blob): Promise<void>;
+    /** Si el Historial del portapapeles de Windows (Win + V) está activo;
+     * null si el entorno no puede saberlo (navegador). */
+    historialActivo(): Promise<boolean | null>;
   };
 }

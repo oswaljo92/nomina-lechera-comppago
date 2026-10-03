@@ -206,6 +206,27 @@ export interface NotaDebitoCalculada {
   diferenciaTasa: number; // tasaFin - tasaIni  (positiva si la tasa subió)
   montoUsd: number;
   centimos: number;
+  /** Solo en las importadas: los datos del Excel para la tabla "A Modo
+   * Informativo" de la nota de débito (no participan en ningún cálculo). */
+  informativo?: InformativoNdImportada;
+}
+
+/** Datos de una fila del Excel de ND, tal como los muestra el Excel. */
+export interface InformativoNdImportada {
+  codigo: string;
+  tipo: TipoNomina;
+  litros: number | null;
+  /** $/Lts (leche) o $/Flete (transporte). */
+  precioUsd: number | null;
+  bsXLtsInicio: number | null;
+  bsXLtsAjustado: number | null;
+}
+
+/** ND importada ya emparejada, lista para reemplazar el cálculo por tasas. */
+export interface NdImportadaResumen {
+  centimos: number;
+  fechaNota: string;
+  informativo?: Omit<InformativoNdImportada, 'codigo'>;
 }
 
 export interface NotaDebitoNoCalculable {

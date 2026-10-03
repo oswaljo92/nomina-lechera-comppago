@@ -40,6 +40,7 @@ import { construirComprobanteAgrupado } from '../src/core/receipt/comprobanteAgr
 import { construirComprobante, type ContextoComprobante } from '../src/core/receipt/comprobante.ts';
 import { decimalesDeFormato, normalizarCodigo, redondearComoExcel } from '../src/core/db/notaDebitoExcel.ts';
 import { datosConNdPorSap, gruposNdPorSap } from '../src/core/receipt/notaDebitoSap.ts';
+import { validarAtajo, textoAtajo } from '../src/ui/util/atajosReglas.ts';
 import type { NotaDebitoImportada } from '../src/core/types.ts';
 import { sha256DeBytes } from '../src/core/auth/hash.ts';
 import {
@@ -793,6 +794,58 @@ console.log(`\n${B}Nota de débito: mismo SAP se suma (misma fábrica)${N}`);
     'Mezcla leche+transporte etiqueta Leche/Flete en vez de por código',
     JSON.stringify(datosConSapMixto.notaDebitoAgrupada?.porCodigo.map((p) => p.codigo)),
   );
+  const infoMixta = datosConSapMixto.notaDebitoAgrupada?.porCodigo.map((p) =>
+    p.resultado?.aplica ? p.resultado.informativo : undefined,
+  );
+  ok(
+    Boolean(
+      infoMixta?.every((i) => i !== undefined) &&
+        infoMixta.some((i) => i!.tipo === 'leche' && i!.codigo === prolamar.leido.codigo) &&
+        infoMixta.some((i) => i!.tipo === 'transporte' && i!.codigo === rutaLibre.leido.codigo),
+    ),
+    'Cada línea del grupo SAP lleva sus datos "A Modo Informativo" (código y servicio)',
+    JSON.stringify(infoMixta),
+  );
+}
+
+console.log(`
+${B}Nota de débito: datos "A Modo Informativo"${N}`);
+{
+  const conInfo = new Map([
+    [
+      '009119',
+      {
+        centimos: 30869300,
+        fechaNota: '2026-09-10',
+        informativo: { tipo: 'leche' as const, litros: 14002, precioUsd: 0.83, bsXLtsInicio: 664.975, bsXLtsAjustado: 687.022 },
+      },
+    ],
+  ]);
+  const res = resolverNotaDebito('009119', null, 14002, '2026-08-12', new Map(), conInfo);
+  ok(
+    res?.aplica === true &&
+      res.informativo?.codigo === '009119' &&
+      res.informativo.bsXLtsAjustado === 687.022 &&
+      res.informativo.precioUsd === 0.83,
+    'resolverNotaDebito pasa los datos del Excel con el código del proveedor',
+    JSON.stringify(res),
+  );
+}
+
+console.log(`
+${B}Atajos de teclado (3 teclas, sin conflictos)${N}`);
+{
+  const at = (ctrl: boolean, alt: boolean, shift: boolean, codigo: string) => ({ ctrl, alt, shift, codigo });
+  ok(validarAtajo(at(true, false, true, 'KeyF')) === null, 'Ctrl + Shift + F es válido');
+  ok(validarAtajo(at(false, true, true, 'KeyK')) === null, 'Alt + Shift + K es válido');
+  ok(validarAtajo(at(true, false, true, 'F7')) === null, 'Ctrl + Shift + F7 es válido');
+  ok(validarAtajo(at(true, false, false, 'KeyF')) !== null, 'Ctrl + F (2 teclas) se rechaza');
+  ok(validarAtajo(at(true, true, false, 'KeyQ')) !== null, 'Ctrl + Alt (AltGr) se rechaza');
+  ok(validarAtajo(at(true, true, true, 'KeyF')) !== null, '4 teclas se rechazan');
+  ok(validarAtajo(at(true, false, true, 'KeyI')) !== null, 'Ctrl + Shift + I (herramientas) se rechaza');
+  ok(validarAtajo(at(true, false, true, 'KeyV')) !== null, 'Ctrl + Shift + V (pegar sin formato) se rechaza');
+  ok(validarAtajo(at(true, false, true, 'Digit1')) !== null, 'Ctrl + Shift + número (idioma) se rechaza');
+  ok(textoAtajo(at(true, false, true, 'KeyF')) === 'Ctrl + Shift + F', 'Se muestra legible');
 }
 
 // ═══ Borrado ═══

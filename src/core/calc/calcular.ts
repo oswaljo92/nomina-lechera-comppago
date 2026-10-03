@@ -10,6 +10,7 @@ import type {
   RegistroLeido,
   ResultadoNotaDebito,
   TasaBcv,
+  NdImportadaResumen,
 } from '../types.ts';
 
 /**
@@ -159,7 +160,7 @@ export function resolverNotaDebito(
   litros: number | null,
   fechaIniSemana: string,
   tasas: Map<string, number>,
-  ndImportada: Map<string, { centimos: number; fechaNota: string }>,
+  ndImportada: Map<string, NdImportadaResumen>,
 ): ResultadoNotaDebito | null {
   const importada = ndImportada.get(codigo);
   if (importada) {
@@ -178,6 +179,7 @@ export function resolverNotaDebito(
       diferenciaTasa: 0,
       montoUsd: 0,
       centimos: importada.centimos,
+      ...(importada.informativo ? { informativo: { codigo, ...importada.informativo } } : {}),
     };
   }
   return params ? calcularNotaDebito(params, litros, fechaIniSemana, tasas) : null;

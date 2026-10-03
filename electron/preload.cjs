@@ -23,4 +23,5 @@ contextBridge.exposeInMainWorld('lectorocr', {
 
   copiarTexto: (texto) => ipcRenderer.invoke('portapapeles:texto', texto),
   copiarImagenPng: (bytes) => ipcRenderer.invoke('portapapeles:imagen', bytes),
+  historialPortapapeles: () => ipcRenderer.invoke('portapapeles:historial'),
 });

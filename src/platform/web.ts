@@ -176,6 +176,7 @@ export async function crearPlataformaWeb(): Promise<Plataforma> {
     portapapeles: {
       copiarTexto: (texto) => navigator.clipboard.writeText(texto),
       copiarImagen: (png) => navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]),
+      historialActivo: async () => null,
     },
   };
 }

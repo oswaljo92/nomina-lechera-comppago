@@ -22,6 +22,7 @@ const path = require('node:path');
 const fs = require('node:fs/promises');
 const fsSync = require('node:fs');
 const { pathToFileURL } = require('node:url');
+const { execFile } = require('node:child_process');
 
 const DEV = !app.isPackaged;
 const RAIZ_DIST = path.join(__dirname, '..', 'dist');
@@ -204,6 +205,24 @@ ipcMain.handle('portapapeles:imagen', (_evento, bytesPng) => {
   const imagen = nativeImage.createFromBuffer(Buffer.from(bytesPng));
   if (imagen.isEmpty()) throw new Error('No se pudo leer la imagen para copiarla.');
   clipboard.writeImage(imagen);
+});
+
+// Historial del portapapeles de Windows (Win + V): sin él, copiar varias
+// filas seguidas deja solo la última. Sin el valor en el registro, Windows
+// lo trata como apagado.
+ipcMain.handle('portapapeles:historial', () => {
+  if (process.platform !== 'win32') return null;
+  return new Promise((resolver) => {
+    execFile(
+      'reg',
+      ['query', 'HKCU\\Software\\Microsoft\\Clipboard', '/v', 'EnableClipboardHistory'],
+      { windowsHide: true },
+      (error, salida) => {
+        if (error) return resolver(false);
+        resolver(/EnableClipboardHistory\s+REG_DWORD\s+0x1\b/.test(salida));
+      },
+    );
+  });
 });
 
 ipcMain.handle('archivo:abrir', async (evento, extensiones) => {

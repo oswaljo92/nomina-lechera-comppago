@@ -479,6 +479,70 @@ table.tabla tfoot td {
    anularía la regla que lo muestra. */
 .resumen-tarjetas { display: none; }
 
+/* Tabla de Notas de Débito: los botones de "Generar ND" y "Acciones" van en
+   una columna de botones del mismo ancho, en vez de quedar sueltos y
+   desalineados. */
+.botonera { display: grid; gap: 4px; }
+table.tabla td.botonera-nd { white-space: normal; }
+table.tabla-nd td.principal { min-width: 150px; }
+table.tabla td.botonera-nd .btn { width: 100%; }
+table.tabla td.sin-salto { white-space: nowrap; }
+.ayuda-atajos { margin: 4px 0 10px; line-height: 1.6; }
+.lista-atajos { display: grid; gap: 10px; }
+/* Lista para elegir un proveedor (emparejar ND): mismo aspecto que las
+   filas de las tablas, con la elegida resaltada en verde. */
+.lista-elegible {
+  max-height: 340px;
+  overflow-y: auto;
+  border: 1px solid var(--borde);
+  border-radius: var(--radio-s);
+  margin-top: 8px;
+}
+.opcion-elegible {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: 9px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--borde);
+  border-left: 3px solid transparent;
+  background: var(--panel);
+  color: var(--texto);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.opcion-elegible:last-child { border-bottom: 0; }
+.opcion-elegible:hover { background: var(--panel-2); }
+.opcion-elegible.elegida { background: var(--verde-50); border-left-color: var(--verde-500); }
+.opcion-elegible .nombre-prov { font-weight: 600; }
+.opcion-elegible .sub { font-size: 11.5px; color: var(--texto-2); }
+.fila-atajo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border: 1px solid var(--borde);
+  border-radius: var(--radio-s);
+}
+.fila-atajo kbd { font-size: 12.5px; padding: 4px 10px; }
+.fila-atajo kbd.grabando { border-color: var(--verde-500); color: var(--verde-500); }
+kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  border: 1px solid var(--borde-fuerte);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--panel);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--texto);
+  white-space: nowrap;
+}
+
 /*
  * Tablas que se convierten en tarjetas.
  *
@@ -541,6 +605,26 @@ table.tabla tfoot td {
     border-radius: 0 0 var(--radio-s) var(--radio-s);
   }
   .tabla-adaptable table.tabla td.acciones-celda .btn { min-height: 34px; }
+  .tabla-adaptable table.tabla td.acciones-celda { max-width: none; }
+
+  /* Cada fila-tarjeta ya lleva 10px de margen: con width 100% además se
+     salía del contenedor y aparecía una barra de desplazamiento horizontal. */
+  .tabla-adaptable table.tabla tr { width: auto; }
+
+  /* Botones de la tabla de ND: en tarjeta ocupan todo el ancho, repartidos
+     en columnas iguales y más altos (fáciles de tocar), sin huecos. */
+  .tabla-adaptable table.tabla-nd td.principal { min-width: 0; }
+  .tabla-adaptable table.tabla td.botonera-nd {
+    display: block;
+    padding: 10px 12px;
+    background: var(--panel-2);
+  }
+  .tabla-adaptable table.tabla td.botonera-nd:last-child { border-radius: 0 0 var(--radio-s) var(--radio-s); }
+  .tabla-adaptable .botonera {
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 8px;
+  }
+  .tabla-adaptable table.tabla td.botonera-nd .btn { min-height: 40px; font-size: 13.5px; }
   .tabla-adaptable table.tabla td.principal {
     background: var(--panel-2);
     border-radius: var(--radio-s) var(--radio-s) 0 0;
@@ -569,6 +653,108 @@ table.tabla tfoot td {
   /* Sin hover real en pantallas táctiles: el lápiz de edición queda visible
      siempre en vez de aparecer solo al pasar el mouse. */
   .lapiz-editar { opacity: 1; }
+}
+
+/* La tabla de Notas de Débito tiene 12 columnas: entre 760 y 960px no cabe
+   y la barra horizontal escondía los botones. Pasa a tarjetas (≤960px) antes que las
+   demás tablas, con las mismas reglas (copiadas de arriba, solo para ella). */
+@container contenido (max-width: 960px) {
+  .tabla-adaptable table.tabla-nd,
+  .tabla-adaptable table.tabla-nd tbody,
+  .tabla-adaptable table.tabla-nd tr,
+  .tabla-adaptable table.tabla-nd td {
+    display: block;
+    width: 100%;
+  }
+  .tabla-adaptable table.tabla-nd thead,
+  .tabla-adaptable table.tabla-nd tfoot { display: none; }
+
+  .tabla-adaptable table.tabla-nd tr {
+    border: 1px solid var(--borde);
+    border-radius: var(--radio-s);
+    background: var(--panel);
+    margin: 10px;
+    padding: 4px 0;
+    box-shadow: var(--sombra);
+  }
+  .tabla-adaptable table.tabla-nd tr.elegida {
+    border-color: var(--verde-500);
+    background: var(--verde-50);
+  }
+  .tabla-adaptable table.tabla-nd td {
+    border-bottom: 1px solid var(--borde);
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    padding: 8px 12px;
+    text-align: right;
+  }
+  .tabla-adaptable table.tabla-nd td:last-child { border-bottom: 0; }
+  .tabla-adaptable table.tabla-nd td::before {
+    content: attr(data-etiqueta);
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--texto-3);
+    font-weight: 700;
+    font-family: var(--sans);
+    text-align: left;
+    flex: 0 0 auto;
+  }
+  /* Celdas sin etiqueta (nombre principal, acciones) ocupan la fila entera. */
+  .tabla-adaptable table.tabla-nd td:not([data-etiqueta]) { display: block; text-align: left; }
+  .tabla-adaptable table.tabla-nd td.acciones-celda {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 6px;
+    background: var(--panel-2);
+    border-radius: 0 0 var(--radio-s) var(--radio-s);
+  }
+  .tabla-adaptable table.tabla-nd td.acciones-celda .btn { min-height: 34px; }
+  .tabla-adaptable table.tabla-nd td.acciones-celda { max-width: none; }
+
+  /* Cada fila-tarjeta ya lleva 10px de margen: con width 100% además se
+     salía del contenedor y aparecía una barra de desplazamiento horizontal. */
+  .tabla-adaptable table.tabla-nd tr { width: auto; }
+
+  /* Botones de la tabla de ND: en tarjeta ocupan todo el ancho, repartidos
+     en columnas iguales y más altos (fáciles de tocar), sin huecos. */
+  .tabla-adaptable table.tabla-nd td.principal { min-width: 0; }
+  .tabla-adaptable table.tabla-nd td.botonera-nd {
+    display: block;
+    padding: 10px 12px;
+    background: var(--panel-2);
+  }
+  .tabla-adaptable table.tabla-nd td.botonera-nd:last-child { border-radius: 0 0 var(--radio-s) var(--radio-s); }
+  .tabla-adaptable table.tabla-nd .botonera {
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 8px;
+  }
+  .tabla-adaptable table.tabla-nd td.botonera-nd .btn { min-height: 40px; font-size: 13.5px; }
+  .tabla-adaptable table.tabla-nd td.principal {
+    background: var(--panel-2);
+    border-radius: var(--radio-s) var(--radio-s) 0 0;
+    padding-right: 46px;
+  }
+  .tabla-adaptable table.tabla-nd td.num { justify-content: space-between; }
+
+  /* La casilla de selección se ancla a la esquina de la tarjeta en lugar de
+     ocupar una fila entera para sí sola. */
+  .tabla-adaptable table.tabla-nd tr { position: relative; }
+  .tabla-adaptable table.tabla-nd td.selector {
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    width: auto;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    z-index: 1;
+  }
+  .tabla-adaptable table.tabla-nd td.selector input { width: 22px; height: 22px; }
+
 }
 
 /* ── Señales ───────────────────────────────────────────────── */

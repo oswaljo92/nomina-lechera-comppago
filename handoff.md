@@ -43,22 +43,23 @@ tocar la factura de cada código.
 ## 2. Estado actual
 
 Todo está implementado, tipado sin errores (`npm run check`), pasa
-`test:core`/`test:parser` (con pruebas nuevas de `decimalesDeFormato`/
-`redondearComoExcel`), se probó a mano en el navegador con el Excel real
-(`entradas/ND CALCULADA.xlsx`) y las nóminas `GAN0584_6`/`GAN0594_6`: la
-pestaña Notas de Débito muestra cada número exactamente como la vista del
-Excel (82.950, 12.779, 1.154.817; 0,850 / 680,999 / 703,577 / 22,578), y los
-botones 📋/🖼 junto al nombre copian el nombre y el PNG real de la factura
-(o de la ND en su pestaña). Está commiteado y pusheado a `origin/master`, y
-compilado en `release/CompPago-1.8.0-windows.zip` (`npm run electron:build`
-completo).
+`test:core`/`test:parser` (con pruebas nuevas de atajos y de los datos "A
+Modo Informativo"), y se probó a mano en el navegador con el Excel real y
+`GAN0584_6`/`GAN0594_6`: la ND combinada de NANCY (008877 leche + 000622
+flete) muestra la tabla "A Modo Informativo" con sus dos filas y "Sin efecto
+fiscal · Folio …" en el pie; Ctrl+Shift+F / Ctrl+Shift+L (teclas reales)
+copiaron 2 imágenes y 2 nombres por separado; la tabla de ND no desborda en
+1150/1280/1440 px y en tarjeta reparte los botones a todo el ancho; el
+modal de emparejar usa el buscador de la app. Está commiteado y pusheado a
+`origin/master`, y compilado en `release/CompPago-1.9.0-windows.zip`.
 
-**Versión actual: `1.8.0`** (subida en esta tanda, ver sección 3).
+**Versión actual: `1.9.0`** (subida en esta tanda, ver sección 3).
 
 Últimos commits:
 
 ```
-(este commit) ND importada con los números exactos que muestra el Excel; botones copiar nombre/imagen; sube a 1.8.0
+(este commit) Atajos configurables y copia múltiple, tabla "A Modo Informativo" en la ND, "Sin efecto fiscal", tabla ND reordenada, buscador al emparejar; sube a 1.9.0
+999dafd ND importada con los números exactos que muestra el Excel; botones copiar nombre/imagen; sube a 1.8.0
 bff9260 Corrige import de Excel sin columna de código y emparejamiento por nombre; suma ND por SAP; sube a 1.7.0
 92ea542 Separa concepto manual de configuración de ND en Comprobantes generales; sube a 1.6.0
 fcf0bc8 Muestra siempre la fecha de factura en la factura; título "COMPROBANTE"; sube a 1.5.2
@@ -910,7 +911,7 @@ idénticos). Quedó definido así:
   las descarta correctamente con un aviso) — se cubrió con una prueba
   unitaria nueva en `scripts/test-core.ts` en su lugar.
 
-### Esta sesión: números exactos como el Excel + copiar nombre/imagen
+### Sesión anterior (12): números exactos como el Excel + copiar nombre/imagen
 
 Pedido 1: al importar el Excel de ND, ver los números exactos de la vista
 del Excel. Causa: las celdas traen el valor crudo (ej. Bs. a Pagar
@@ -955,6 +956,48 @@ la tabla (aparte de descargar PDF/imagen), ambos botones pegados al nombre.
   portapapeles (se vio el aviso de error correcto); con el portapapeles
   simulado se confirmó el texto exacto y un PNG real (1786×1617 factura,
   1786×1440 ND). En Electron se usa el portapapeles nativo, sin permisos.
+
+### Esta sesión: atajos + copia múltiple, "A Modo Informativo", tabla ND ordenada
+
+1. **Tabla de ND (pestaña Notas de Débito)**: columna de selección (con
+   "todas"); el código pasó a la línea gris bajo el nombre (una columna
+   menos). "Generar ND" y "Acciones" son una `.botonera` (grid de botones del
+   mismo ancho). En modo tarjeta los botones llenan el ancho en columnas
+   iguales (`minmax(130px,1fr)`, 40px de alto). Esta tabla pasa a tarjetas
+   desde ≤960px de contenedor (bloque `@container` duplicado solo para
+   `table.tabla-nd`; las demás tablas siguen en 760px), porque con 12
+   columnas entre 760 y 960 aparecía barra horizontal tapando los botones.
+   Fix general: en tarjeta `tr` tenía `width:100%` + margen 10px → barra
+   horizontal en TODAS las tablas adaptables; ahora `width:auto`.
+2. **Atajos configurables** (`src/ui/util/atajosReglas.ts` puro + hook en
+   `atajos.ts`): siempre 3 teclas, solo Ctrl+Shift+(letra/F1–F12) o
+   Alt+Shift+letra; se rechazan Ctrl+Alt (AltGr), Win, números con
+   Ctrl+Shift (cambio de idioma) y las reservadas (I/J/C herramientas, R, N,
+   T, W, Q, V pegar sin formato, Z, etc.) y duplicados. Por defecto
+   Ctrl+Shift+F (imagen) y Ctrl+Shift+L (nombre). Se guardan en `ajustes`
+   (`atajo.copiarImagen`/`atajo.copiarNombre`). Se configuran en Ajustes →
+   Sistema (`ConfigAtajos.tsx`, captura la combinación; Esc cancela).
+   Funcionan en Comprobantes generales (imagen = factura) y en Notas de
+   Débito (imagen = ND), sobre las filas marcadas.
+3. **Copia múltiple** (`copiaEnSerie.ts`): copia cada elemento por separado
+   con 900 ms entre uno y otro, en orden inverso, para que el Historial del
+   portapapeles de Windows (Win+V) guarde cada uno como entrada aparte en el
+   orden de la tabla. Probado en este equipo (Win 11) con Electron: guardó 3
+   imágenes (incluida una de 1786×1617) + texto. Si el historial está
+   apagado, Electron lo detecta (`reg query HKCU\Software\Microsoft\Clipboard
+   /v EnableClipboardHistory`, IPC `portapapeles:historial`) y el aviso
+   explica cómo activarlo. Filas que dan la misma ND (SAP/vínculo) se copian
+   una sola vez; nombres repetidos también.
+4. **ND independiente**: bajo la caja "DIFERENCIA DE PRECIO" se dibuja "A
+   Modo Informativo" + tabla CÓDIGO / SERVICIO / LITROS / PRECIO $ / BS X LTS
+   INICIO / BS X LTS AJUSTADO (una fila por lado/código importado, leche
+   primero). Datos: nuevo `NotaDebitoCalculada.informativo`, que llena
+   `resolverNotaDebito` desde `ndImportadaMapa` (ahora también lee litros,
+   precios y Bs x Lts) y `datosConNdPorSap`. Solo para ND importadas; la
+   factura no cambia. Pie de la ND: "Sin efecto fiscal  ·  Folio …".
+5. **Emparejar** (`ModalResolverNotaDebito.tsx`): buscador con el estilo de
+   la app + lista de tarjetas seleccionables (doble clic confirma); primero
+   los que comparten palabras con el nombre del Excel.
 
 ## 4. Intentos fallidos / notas técnicas
 

@@ -7,6 +7,8 @@ import { ModalVinculo } from '../../components/ModalVinculo.tsx';
 import { ModalGrupoMismoTipo } from '../../components/ModalGrupoMismoTipo.tsx';
 import { VistaPrevia } from '../../components/VistaPrevia.tsx';
 import { NombreConCopia } from '../../components/NombreConCopia.tsx';
+import { leerAtajo, textoAtajo, useAtajosCopia } from '../../util/atajos.ts';
+import { avisoCopiaMultiple, copiarEnSerie } from '../../util/copiaEnSerie.ts';
 import * as repo from '../../../core/db/repo.ts';
 import {
   construirComprobante,
@@ -45,6 +47,7 @@ export function SeccionComprobantesGenerales({
   const { db, usuario, plataforma, cambiado, puedo } = useApp();
 
   const [seleccion, setSeleccion] = useState<Set<string>>(new Set());
+  const [copiando, setCopiando] = useState<{ hechos: number; total: number } | null>(null);
   const [busqueda, setBusqueda] = useState('');
   const [fabrica, setFabrica] = useState('');
   const [soloConNd, setSoloConNd] = useState(false);
@@ -298,30 +301,98 @@ export function SeccionComprobantesGenerales({
     }
   }
 
-  /** Genera la imagen (PNG) de la factura de esta fila y la deja en el
-   * portapapeles. Cuenta como una entrega más en el historial de descargas. */
-  async function copiarImagenFactura(r: (typeof registros)[number]) {
-    if (!usuario) return;
+  /** Imagen (PNG) de la factura de cada registro al portapapeles, una por
+   * una (ver `copiarEnSerie`); los combinados/agrupados se copian una sola
+   * vez. Cuenta como entrega. Devuelve cuántas imágenes se copiaron. */
+  async function copiarImagenesFactura(lista: (typeof registros)[number][]): Promise<number> {
+    if (!usuario) return 0;
     setMensaje(null);
-    const u = unidadDe(r);
-    const [archivo] = await generarComprobantes(
-      [{ registroIds: u.registroIds, datos: u.datos, numeroNomina: nomina.numero }],
-      { formato: 'png', opciones },
-    );
-    if (!archivo) return;
-    await plataforma.portapapeles.copiarImagen(archivo.blob);
-    await repo.registrarDescargas(
-      db,
-      usuario,
-      archivo.registroIds.map((registroId) => ({
-        registroId,
-        folio: archivo.folio,
-        formato: 'png' as const,
-        archivo: `${archivo.nombre} (copiado)`,
-      })),
-    );
-    cambiado();
+    const vistas = new Set<string>();
+    const unidades = lista.flatMap((r) => {
+      const u = unidadDe(r);
+      const clave = [...u.registroIds].sort().join('|');
+      if (vistas.has(clave)) return [];
+      vistas.add(clave);
+      return [u];
+    });
+
+    const entregadas: Awaited<ReturnType<typeof generarComprobantes>> = [];
+    try {
+      await copiarEnSerie(
+        plataforma,
+        unidades.map((u) => ({
+          obtener: async () => {
+            const [archivo] = await generarComprobantes(
+              [{ registroIds: u.registroIds, datos: u.datos, numeroNomina: nomina.numero }],
+              { formato: 'png', opciones },
+            );
+            entregadas.push(archivo!);
+            return archivo!.blob;
+          },
+        })),
+        (hechos, total) => total > 1 && setCopiando({ hechos, total }),
+      );
+    } finally {
+      setCopiando(null);
+      if (entregadas.length > 0) {
+        await repo.registrarDescargas(
+          db,
+          usuario,
+          entregadas.flatMap((a) =>
+            a.registroIds.map((registroId) => ({
+              registroId,
+              folio: a.folio,
+              formato: 'png' as const,
+              archivo: `${a.nombre} (copiado)`,
+            })),
+          ),
+        );
+        cambiado();
+      }
+    }
+    return unidades.length;
   }
+
+  // ── Atajos de teclado: copian lo de las filas marcadas ──────────────
+  async function atajoCopiar(que: 'imagen' | 'nombre') {
+    if (copiando || progreso) return;
+    if (elegidos.length === 0) {
+      setMensaje({ nivel: 'error', texto: 'Marca al menos un proveedor (casilla de la izquierda) para copiar con el atajo.' });
+      return;
+    }
+    try {
+      if (que === 'imagen') {
+        const n = await copiarImagenesFactura(elegidos);
+        setMensaje(
+          n > 1
+            ? await avisoCopiaMultiple(plataforma, n, 'imágenes')
+            : { nivel: 'ok', texto: 'Imagen de la factura copiada. Pégala con Ctrl + V.' },
+        );
+      } else {
+        setMensaje(null);
+        const nombres = [...new Set(elegidos.map((r) => unidadDe(r).datos.proveedor.nombre))];
+        await copiarEnSerie(
+          plataforma,
+          nombres.map((n) => ({ obtener: async () => n })),
+          (hechos, total) => total > 1 && setCopiando({ hechos, total }),
+        );
+        setMensaje(
+          nombres.length > 1
+            ? await avisoCopiaMultiple(plataforma, nombres.length, 'nombres')
+            : { nivel: 'ok', texto: `Nombre copiado: ${nombres[0]}` },
+        );
+      }
+    } catch (e) {
+      setMensaje({ nivel: 'error', texto: `No se pudo copiar: ${e instanceof Error ? e.message : String(e)}` });
+    } finally {
+      setCopiando(null);
+    }
+  }
+
+  useAtajosCopia(db, {
+    copiarImagen: () => void atajoCopiar('imagen'),
+    copiarNombre: () => void atajoCopiar('nombre'),
+  });
 
   /** true si la unidad (individual, combinada o agrupada) tiene una ND calculable. */
   function ndAplica(datos: DatosComprobante): boolean {
@@ -496,6 +567,18 @@ export function SeccionComprobantesGenerales({
           </button>
         </div>
 
+        <p className="tenue pequeno ayuda-atajos">
+          Marca uno o varios proveedores y presiona <kbd>{textoAtajo(leerAtajo(db, 'copiarImagen'))}</kbd>{' '}
+          para copiar la imagen de su factura, o <kbd>{textoAtajo(leerAtajo(db, 'copiarNombre'))}</kbd> para
+          copiar el nombre. Con varios, cada uno queda aparte en el historial del portapapeles (Win + V).
+        </p>
+
+        {copiando && (
+          <Aviso nivel="info">
+            Copiando {copiando.hechos} de {copiando.total}… no cambies de ventana hasta que termine.
+          </Aviso>
+        )}
+
         <div className="tabla-envoltura tabla-adaptable">
           <table className="tabla">
             <thead>
@@ -542,8 +625,8 @@ export function SeccionComprobantesGenerales({
                       <NombreConCopia
                         nombre={datos.proveedor.nombre}
                         tituloImagen="Copiar factura como imagen"
-                        alCopiarImagen={() => copiarImagenFactura(r)}
-                        imagenDeshabilitada={progreso !== null || !puedo('generar-comprobante')}
+                        alCopiarImagen={() => copiarImagenesFactura([r]).then(() => undefined)}
+                        imagenDeshabilitada={progreso !== null || copiando !== null || !puedo('generar-comprobante')}
                         alError={(texto) => setMensaje({ nivel: 'error', texto })}
                       />
                       <div className="sub">
