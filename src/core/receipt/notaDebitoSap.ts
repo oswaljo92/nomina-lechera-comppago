@@ -53,6 +53,7 @@ export function gruposNdPorSap(filas: NotaDebitoImportada[]): Map<string, GrupoN
           precioUsd: f.tipo === 'leche' ? f.precioUsdLts : f.precioUsdFlete,
           bsXLtsInicio: f.bsXLtsInicio,
           bsXLtsAjustado: f.bsXLtsAjustado,
+          difXLts: f.difXLts,
         },
       })),
       centimosTotal: lista.reduce((a, f) => a + f.centimos, 0),

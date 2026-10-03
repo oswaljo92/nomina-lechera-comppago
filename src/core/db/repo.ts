@@ -1193,7 +1193,7 @@ export function ndImportadaMapa(
             ndi.tipo AS tipo, ndi.litros_enviados AS litros_enviados,
             ndi.litros_transportados AS litros_transportados, ndi.precio_usd_lts AS precio_usd_lts,
             ndi.precio_usd_flete AS precio_usd_flete, ndi.bs_x_lts_inicio AS bs_x_lts_inicio,
-            ndi.bs_x_lts_ajustado AS bs_x_lts_ajustado
+            ndi.bs_x_lts_ajustado AS bs_x_lts_ajustado, ndi.dif_x_lts AS dif_x_lts
      FROM notas_debito_importadas ndi
      JOIN registros r ON r.id = ndi.registro_id
      WHERE ndi.nomina_id = ? AND ndi.registro_id IS NOT NULL`,
@@ -1214,6 +1214,7 @@ export function ndImportadaMapa(
             precioUsd: num(tipo === 'leche' ? f['precio_usd_lts'] : f['precio_usd_flete']),
             bsXLtsInicio: num(f['bs_x_lts_inicio']),
             bsXLtsAjustado: num(f['bs_x_lts_ajustado']),
+            difXLts: num(f['dif_x_lts']),
           },
         },
       ];

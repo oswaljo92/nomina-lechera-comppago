@@ -727,7 +727,8 @@ function lineasInformativas(datos: DatosComprobante): InformativoNdImportada[] {
 
 /**
  * Tabla "A Modo Informativo" bajo la caja de la ND independiente: código,
- * servicio (leche/flete), litros, precio en $ y Bs x Lts inicio/ajustado,
+ * servicio (leche/flete), litros, precio en $, Bs x Lts inicio/ajustado y
+ * Dif x Lts,
  * tal cual el Excel importado. Solo informa, no participa en el monto.
  */
 function dibujarTablaInformativa(
@@ -750,11 +751,12 @@ function dibujarTablaInformativa(
   // [texto de encabezado, x, alineación]
   const cols: [string, number, 'izq' | 'der'][] = [
     ['CÓDIGO', izq + 10, 'izq'],
-    ['SERVICIO', izq + 78, 'izq'],
-    ['LITROS', izq + 205, 'der'],
-    ['PRECIO $', izq + 285, 'der'],
-    ['BS X LTS INICIO', izq + 395, 'der'],
-    ['BS X LTS AJUSTADO', der - 10, 'der'],
+    ['SERVICIO', izq + 68, 'izq'],
+    ['LITROS', izq + 170, 'der'],
+    ['PRECIO $', izq + 238, 'der'],
+    ['BS X LTS INICIO', izq + 330, 'der'],
+    ['BS X LTS AJUSTADO', izq + 430, 'der'],
+    ['DIF X LTS', der - 10, 'der'],
   ];
   cols.forEach(([h, x, a]) =>
     l.texto(h, x, y + 12, { tam: 6.5, peso: 'bold', color: COLORES.verde, alineacion: a }),
@@ -771,6 +773,7 @@ function dibujarTablaInformativa(
       fijo(ln.precioUsd, 3),
       fijo(ln.bsXLtsInicio, 3),
       fijo(ln.bsXLtsAjustado, 3),
+      fijo(ln.difXLts, 3),
     ];
     valores.forEach((v, c) =>
       l.texto(v, cols[c]![1], y + 10.5, { tam: 7.5, color: COLORES.tinta, alineacion: cols[c]![2] }),

@@ -220,6 +220,7 @@ export interface InformativoNdImportada {
   precioUsd: number | null;
   bsXLtsInicio: number | null;
   bsXLtsAjustado: number | null;
+  difXLts: number | null;
 }
 
 /** ND importada ya emparejada, lista para reemplazar el cálculo por tasas. */

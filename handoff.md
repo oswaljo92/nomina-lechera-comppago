@@ -51,14 +51,15 @@ fiscal · Folio …" en el pie; Ctrl+Shift+F / Ctrl+Shift+L (teclas reales)
 copiaron 2 imágenes y 2 nombres por separado; la tabla de ND no desborda en
 1150/1280/1440 px y en tarjeta reparte los botones a todo el ancho; el
 modal de emparejar usa el buscador de la app. Está commiteado y pusheado a
-`origin/master`, y compilado en `release/CompPago-1.9.0-windows.zip`.
+`origin/master`, y compilado en `release/CompPago-1.9.1-windows.zip`.
 
-**Versión actual: `1.9.0`** (subida en esta tanda, ver sección 3).
+**Versión actual: `1.9.1`** (1.9.1 = columna Dif x Lts en "A Modo Informativo", ver sección 3).
 
 Últimos commits:
 
 ```
-(este commit) Atajos configurables y copia múltiple, tabla "A Modo Informativo" en la ND, "Sin efecto fiscal", tabla ND reordenada, buscador al emparejar; sube a 1.9.0
+(este commit) Agrega columna Dif x Lts a la tabla A Modo Informativo de la ND; sube a 1.9.1
+b364514 Atajos configurables y copia múltiple, tabla "A Modo Informativo" en la ND, "Sin efecto fiscal", tabla ND reordenada, buscador al emparejar; sube a 1.9.0
 999dafd ND importada con los números exactos que muestra el Excel; botones copiar nombre/imagen; sube a 1.8.0
 bff9260 Corrige import de Excel sin columna de código y emparejamiento por nombre; suma ND por SAP; sube a 1.7.0
 92ea542 Separa concepto manual de configuración de ND en Comprobantes generales; sube a 1.6.0
@@ -990,8 +991,8 @@ la tabla (aparte de descargar PDF/imagen), ambos botones pegados al nombre.
    una sola vez; nombres repetidos también.
 4. **ND independiente**: bajo la caja "DIFERENCIA DE PRECIO" se dibuja "A
    Modo Informativo" + tabla CÓDIGO / SERVICIO / LITROS / PRECIO $ / BS X LTS
-   INICIO / BS X LTS AJUSTADO (una fila por lado/código importado, leche
-   primero). Datos: nuevo `NotaDebitoCalculada.informativo`, que llena
+   INICIO / BS X LTS AJUSTADO / DIF X LTS (esta última agregada en 1.9.1;
+   una fila por lado/código importado, leche primero). Datos: nuevo `NotaDebitoCalculada.informativo`, que llena
    `resolverNotaDebito` desde `ndImportadaMapa` (ahora también lee litros,
    precios y Bs x Lts) y `datosConNdPorSap`. Solo para ND importadas; la
    factura no cambia. Pie de la ND: "Sin efecto fiscal  ·  Folio …".

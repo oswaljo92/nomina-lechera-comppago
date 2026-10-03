@@ -817,7 +817,7 @@ ${B}Nota de débito: datos "A Modo Informativo"${N}`);
       {
         centimos: 30869300,
         fechaNota: '2026-09-10',
-        informativo: { tipo: 'leche' as const, litros: 14002, precioUsd: 0.83, bsXLtsInicio: 664.975, bsXLtsAjustado: 687.022 },
+        informativo: { tipo: 'leche' as const, litros: 14002, precioUsd: 0.83, bsXLtsInicio: 664.975, bsXLtsAjustado: 687.022, difXLts: 22.046 },
       },
     ],
   ]);
@@ -826,7 +826,8 @@ ${B}Nota de débito: datos "A Modo Informativo"${N}`);
     res?.aplica === true &&
       res.informativo?.codigo === '009119' &&
       res.informativo.bsXLtsAjustado === 687.022 &&
-      res.informativo.precioUsd === 0.83,
+      res.informativo.precioUsd === 0.83 &&
+      res.informativo.difXLts === 22.046,
     'resolverNotaDebito pasa los datos del Excel con el código del proveedor',
     JSON.stringify(res),
   );
