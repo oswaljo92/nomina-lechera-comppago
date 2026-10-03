@@ -842,6 +842,12 @@ console.log(`\n${B}Nota de débito: mismo SAP se suma (misma fábrica)${N}`);
     'La ND sumada por SAP imprime la fecha de nota que trae el Excel',
     JSON.stringify(textosNd.filter((t) => t.includes('Fecha'))),
   );
+  const montosNd = textosNd.filter((t) => t.endsWith(' Bs'));
+  ok(
+    montosNd.includes('443.813 Bs') && montosNd.every((t) => !t.includes(',')),
+    'La ND aparte muestra los montos sin decimales (total y desglose)',
+    JSON.stringify(montosNd),
+  );
   ok(datosConSap.notaDebito === null, 'La ND individual se reemplaza por la del grupo');
   ok(datosConSap.notaDebitoAgrupada?.centimos === 44381300, 'El total combinado queda en notaDebitoAgrupada');
   ok(

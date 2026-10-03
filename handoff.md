@@ -51,14 +51,15 @@ fiscal · Folio …" en el pie; Ctrl+Shift+F / Ctrl+Shift+L (teclas reales)
 copiaron 2 imágenes y 2 nombres por separado; la tabla de ND no desborda en
 1150/1280/1440 px y en tarjeta reparte los botones a todo el ancho; el
 modal de emparejar usa el buscador de la app. Está commiteado y pusheado a
-`origin/master`, y compilado en `release/CompPago-1.10.1-windows.zip`.
+`origin/master`, y compilado en `release/CompPago-1.10.2-windows.zip`.
 
-**Versión actual: `1.10.1`** (1.10.1 = reimportar el Excel de ND reemplaza, ya no duplica; 1.10.0 = ND quitadas/restaurar, encabezado fijo y buscador a media tabla en Notas de Débito). Antes: (1.9.1 = columna Dif x Lts en "A Modo Informativo"; 1.9.2 = la ND independiente imprime la fecha de nota del Excel también cuando se arma sumando códigos/SAP, ver sección 3).
+**Versión actual: `1.10.2`** (1.10.2 = la ND aparte muestra montos sin decimales; 1.10.1 = reimportar el Excel de ND reemplaza, ya no duplica; 1.10.0 = ND quitadas/restaurar, encabezado fijo y buscador a media tabla en Notas de Débito). Antes: (1.9.1 = columna Dif x Lts en "A Modo Informativo"; 1.9.2 = la ND independiente imprime la fecha de nota del Excel también cuando se arma sumando códigos/SAP, ver sección 3).
 
 Últimos commits:
 
 ```
-(este commit) Reimportar ND reemplaza en vez de duplicar (conserva emparejamientos manuales); datos-escritorio restaura solo lo respaldado en ese build; sube a 1.10.1
+(este commit) La ND aparte muestra los montos sin decimales (la factura no cambia); sube a 1.10.2
+04d7a77 Reimportar ND reemplaza en vez de duplicar (conserva emparejamientos manuales); datos-escritorio restaura solo lo respaldado en ese build; sube a 1.10.1
 2a427b9 ND importadas quitadas se pueden restaurar; encabezado fijo y buscador a la mitad en la tabla de ND; sube a 1.10.0
 03e0a65 El build respalda y restaura release/win-unpacked/datos (antes lo borraba)
 9775bd9 La ND independiente muestra la fecha de nota del Excel también en ND sumadas por SAP/agrupadas (la factura no cambia); sube a 1.9.2
@@ -1080,6 +1081,15 @@ la tabla (aparte de descargar PDF/imagen), ambos botones pegados al nombre.
   incluidas), informa cuántas reemplazó, y reimportar conserva el manual.
   En el navegador: importar el Excel real 2 veces seguidas → 56 filas ambas
   veces.
+
+### Esta sesión (cont.): ND aparte sin decimales (1.10.2)
+
+- Solo en `dibujarNotaDebito` (vista previa, PDF, PNG y copia): el total de
+  la caja ("3.144 Bs") y el desglose por código/lado ("CÓDIGO 008169: 2.127
+  Bs") usan `bolivaresEnteros` (= `formatearEntero(centimos/100)`).
+  `dibujarDetalleNd` recibe el formateador como parámetro (por defecto
+  `formatearBs`), así la factura sigue mostrando ",00". Prueba en test-core
+  y verificado en la vista previa ("50.031 Bs").
 
 ## 4. Intentos fallidos / notas técnicas
 

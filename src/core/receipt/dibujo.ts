@@ -458,13 +458,15 @@ function dibujarDetalleNd(
   /** true en la nota de débito como documento aparte: el monto ya se ve en
    * el título de la caja, no hace falta repetirlo como leyenda debajo. */
   ocultarDesglose = false,
+  /** Formato de los montos: la ND aparte los muestra en bolívares enteros. */
+  monto: (centimos: number) => string = formatearBs,
 ): number {
   let y = y0;
   const { desglose: desgloseCompleto, filasTabla } = datosDetalleNd(datos);
   const desglose = ocultarDesglose ? [] : desgloseCompleto;
 
   desglose.forEach((d, i) => {
-    l.texto(`${d.etiqueta}: ${formatearBs(d.centimos)} Bs`, izq + 12, y + 9 + i * 9, {
+    l.texto(`${d.etiqueta}: ${monto(d.centimos)} Bs`, izq + 12, y + 9 + i * 9, {
       tam: 7.5,
       color: COLORES.tenue,
     });
@@ -735,6 +737,11 @@ export function dibujarComprobante(
   return { primitivas: l.primitivas, alto: Math.round(yPie + MARGEN - 8) };
 }
 
+/** 314400 -> "3.144" (céntimos a bolívares enteros, sin ",00"). */
+function bolivaresEnteros(centimos: number): string {
+  return formatearEntero(centimos / 100);
+}
+
 /** Filas del Excel de ND (solo las importadas) que respaldan la nota:
  * leche primero, después flete, en el orden en que aparecen. */
 function lineasInformativas(datos: DatosComprobante): InformativoNdImportada[] {
@@ -866,14 +873,16 @@ export function dibujarNotaDebito(
       peso: 'bold',
       color: COLORES.blanco,
     });
-    l.texto(`${formatearBs(centimosNd)} Bs`, der - 12, y + 18, {
+    // En la ND como documento aparte los montos van sin decimales
+    // ("3.144 Bs"), a pedido del usuario; la factura conserva los ",00".
+    l.texto(`${bolivaresEnteros(centimosNd)} Bs`, der - 12, y + 18, {
       tam: 13,
       peso: 'bold',
       color: COLORES.blanco,
       alineacion: 'der',
     });
     y += altoFila;
-    y = dibujarDetalleNd(l, datos, izq, y, ocultarDesglose);
+    y = dibujarDetalleNd(l, datos, izq, y, ocultarDesglose, bolivaresEnteros);
 
     const informativas = lineasInformativas(datos);
     if (informativas.length > 0) {
