@@ -417,4 +417,6 @@ export interface NotaDebitoImportada {
   /** "Bs. a Pagar x Dif." del Excel, en céntimos. */
   centimos: number;
   emparejamiento: 'codigo' | 'nombre' | 'manual' | 'pendiente';
+  /** Fecha en que se quitó; null o ausente = vigente. */
+  quitadaEn?: string | null;
 }

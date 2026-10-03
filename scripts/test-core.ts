@@ -665,6 +665,53 @@ console.log(`\n${B}Nota de débito importada${N}`);
   );
 }
 
+// ═══ Nota de débito importada: quitar / restaurar ═══
+console.log(`\n${B}Nota de débito importada: quitar y restaurar${N}`);
+{
+  const filaGuardar = (centimos: number): repo.FilaNdImportadaAGuardar => ({
+    nominaId: leche.id,
+    registroId: prolamar.id,
+    tipo: 'leche',
+    codigoExcel: '',
+    proveedorExcel: 'PRUEBA QUITAR',
+    fabricaExcel: 'VIGIA',
+    sapExcel: '9999999',
+    fechaNota: '2026-10-01',
+    litrosEnviados: 100,
+    litrosTransportados: 0,
+    precioUsdLts: 0.8,
+    precioUsdFlete: null,
+    bsXLtsInicio: 1,
+    bsXLtsAjustado: 2,
+    difXLts: 1,
+    centimos,
+    emparejamiento: 'nombre',
+  });
+  await repo.guardarNotasDebitoImportadas(db, admin, leche.id, [filaGuardar(111100)]);
+  const vigente = repo.notasDebitoImportadasDeNomina(db, leche.id).find((f) => f.proveedorExcel === 'PRUEBA QUITAR')!;
+  ok(repo.ndImportadaMapa(db, leche.id).get(prolamar.leido.codigo)?.centimos === 111100, 'Recién importada, cuenta para la ND');
+
+  await repo.quitarNotaDebitoImportada(db, admin, vigente.id);
+  ok(!repo.notasDebitoImportadasDeNomina(db, leche.id).some((f) => f.id === vigente.id), 'Quitada: sale de la lista vigente');
+  ok(repo.notasDebitoQuitadasDeNomina(db, leche.id).some((f) => f.id === vigente.id && f.quitadaEn), 'Quitada: aparece en «quitadas» con su fecha');
+  ok(!repo.ndImportadaMapa(db, leche.id).has(prolamar.leido.codigo), 'Quitada: ya no cuenta para la ND');
+
+  await repo.restaurarNotaDebitoImportada(db, admin, vigente.id);
+  ok(repo.ndImportadaMapa(db, leche.id).get(prolamar.leido.codigo)?.centimos === 111100, 'Restaurada: vuelve a contar tal cual');
+
+  // Reimportar con una quitada pendiente: entra como vigente nueva, y la
+  // quitada no se puede restaurar mientras exista otra vigente.
+  await repo.quitarNotaDebitoImportada(db, admin, vigente.id);
+  await repo.guardarNotasDebitoImportadas(db, admin, leche.id, [filaGuardar(222200)]);
+  ok(repo.ndImportadaMapa(db, leche.id).get(prolamar.leido.codigo)?.centimos === 222200, 'Reimportar con una quitada guardada no choca');
+  await esperaError(() => repo.restaurarNotaDebitoImportada(db, admin, vigente.id), 'No se restaura si el proveedor ya tiene otra vigente');
+
+  await repo.eliminarNotaDebitoImportada(db, admin, vigente.id);
+  ok(!repo.notasDebitoQuitadasDeNomina(db, leche.id).some((f) => f.id === vigente.id), 'Eliminar la borra definitivamente');
+  const nueva = repo.notasDebitoImportadasDeNomina(db, leche.id).find((f) => f.proveedorExcel === 'PRUEBA QUITAR')!;
+  await repo.eliminarNotaDebitoImportada(db, admin, nueva.id);
+}
+
 // ═══ Nota de débito: mismo SAP + misma fábrica se suman ═══
 console.log(`\n${B}Nota de débito: mismo SAP se suma (misma fábrica)${N}`);
 {

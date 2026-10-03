@@ -51,14 +51,15 @@ fiscal · Folio …" en el pie; Ctrl+Shift+F / Ctrl+Shift+L (teclas reales)
 copiaron 2 imágenes y 2 nombres por separado; la tabla de ND no desborda en
 1150/1280/1440 px y en tarjeta reparte los botones a todo el ancho; el
 modal de emparejar usa el buscador de la app. Está commiteado y pusheado a
-`origin/master`, y compilado en `release/CompPago-1.9.2-windows.zip`.
+`origin/master`, y compilado en `release/CompPago-1.10.0-windows.zip`.
 
-**Versión actual: `1.9.2`** (1.9.1 = columna Dif x Lts en "A Modo Informativo"; 1.9.2 = la ND independiente imprime la fecha de nota del Excel también cuando se arma sumando códigos/SAP, ver sección 3).
+**Versión actual: `1.10.0`** (1.10.0 = ND quitadas/restaurar, encabezado fijo y buscador a media tabla en Notas de Débito). Antes: (1.9.1 = columna Dif x Lts en "A Modo Informativo"; 1.9.2 = la ND independiente imprime la fecha de nota del Excel también cuando se arma sumando códigos/SAP, ver sección 3).
 
 Últimos commits:
 
 ```
-(este commit) El build respalda y restaura release/win-unpacked/datos (antes lo borraba)
+(este commit) ND importadas quitadas se pueden restaurar; encabezado fijo y buscador a la mitad en la tabla de ND; sube a 1.10.0
+03e0a65 El build respalda y restaura release/win-unpacked/datos (antes lo borraba)
 9775bd9 La ND independiente muestra la fecha de nota del Excel también en ND sumadas por SAP/agrupadas (la factura no cambia); sube a 1.9.2
 4d46138 Agrega columna Dif x Lts a la tabla A Modo Informativo de la ND; sube a 1.9.1
 b364514 Atajos configurables y copia múltiple, tabla "A Modo Informativo" en la ND, "Sin efecto fiscal", tabla ND reordenada, buscador al emparejar; sube a 1.9.0
@@ -970,7 +971,7 @@ la tabla (aparte de descargar PDF/imagen), ambos botones pegados al nombre.
   simulado se confirmó el texto exacto y un PNG real (1786×1617 factura,
   1786×1440 ND). En Electron se usa el portapapeles nativo, sin permisos.
 
-### Esta sesión: atajos + copia múltiple, "A Modo Informativo", tabla ND ordenada
+### Sesión anterior (13): atajos + copia múltiple, "A Modo Informativo", tabla ND ordenada
 
 1. **Tabla de ND (pestaña Notas de Débito)**: columna de selección (con
    "todas"); el código pasó a la línea gris bajo el nombre (una columna
@@ -1018,6 +1019,38 @@ la tabla (aparte de descargar PDF/imagen), ambos botones pegados al nombre.
 5. **Emparejar** (`ModalResolverNotaDebito.tsx`): buscador con el estilo de
    la app + lista de tarjetas seleccionables (doble clic confirma); primero
    los que comparten palabras con el nombre del Excel.
+
+### Esta sesión: ND quitadas (restaurables), encabezado fijo, buscador
+
+- **Quitar ya no borra**: antes  hacía DELETE
+  (se perdía la fila). Ahora la tabla  tiene
+   (NULL = vigente).  la marca,
+   la reactiva (falla con mensaje si el
+  proveedor ya tiene OTRA vigente, p. ej. tras reimportar), y
+   queda solo para borrar definitivo desde el
+  apartado de quitadas (con ).
+- Todas las consultas que alimentan ND/emparejamiento
+  (, , y por ende
+  ) filtran ; nueva
+  .
+- **Migración** (en , sin subir VERSION_ESQUEMA):
+   si falta,  y nuevo índice único parcial
+  . El upsert de  usa ese
+  mismo WHERE en su ON CONFLICT (tienen que coincidir). El índice se crea en
+  migrar y NO en ESQUEMA_SQL, porque en una base vieja la columna aún no
+  existe cuando corre el esquema. Probado: base creada con el código de
+  03e0a65 → abierta con el nuevo: columna e índice nuevos, filas intactas,
+  reabrir es idempotente.
+- UI: tarjeta «Notas de débito quitadas (N)» bajo la tabla (solo si hay),
+  con Restaurar / Eliminar; avisos al quitar y restaurar; etiquetas nuevas en
+  la Bitácora.
+- **Encabezado fijo**: los  ya eran sticky, pero   (overflow-x) los anclaba a sí misma.  tiene scroll propio
+  (); en modo tarjeta (≤960px) se quita.
+- **Buscador** de la tabla de ND:  = 50% del ancho (100% en
+  tarjeta).
+- Al compilar,  respaldó y restauró la
+   que el usuario volvió a tener en win-unpacked (idéntica byte
+  a byte tras el build).
 
 ## 4. Intentos fallidos / notas técnicas
 

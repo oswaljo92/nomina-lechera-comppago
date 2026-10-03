@@ -108,6 +108,20 @@ export class BaseDatos {
       this.db.exec('ALTER TABLE conceptos_manual ADD COLUMN efecto TEXT');
     }
 
+    // Migración aditiva: notas de débito importadas "quitadas" (borrado
+    // suave, para poder restaurarlas). Un registro solo puede tener UNA ND
+    // importada VIGENTE; las quitadas y las pendientes (registro_id NULL) no
+    // chocan. Reemplaza al índice viejo idx_ndi_registro_unico, que contaba
+    // también las quitadas.
+    const columnasNdi = this.todos<Fila>('PRAGMA table_info(notas_debito_importadas)');
+    if (!columnasNdi.some((c) => c['name'] === 'quitada_en')) {
+      this.db.exec('ALTER TABLE notas_debito_importadas ADD COLUMN quitada_en TEXT');
+    }
+    this.db.exec(`DROP INDEX IF EXISTS idx_ndi_registro_unico;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_ndi_registro_vigente
+        ON notas_debito_importadas(registro_id)
+        WHERE registro_id IS NOT NULL AND quitada_en IS NULL;`);
+
     this.fijarMeta('version_esquema', String(VERSION_ESQUEMA));
   }
 

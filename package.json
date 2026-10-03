@@ -1,6 +1,6 @@
 {
   "name": "nomina-lechera-comppago",
-  "version": "1.9.2",
+  "version": "1.10.0",
   "private": true,
   "description": "Nómina Lechera CompPago — lector de nóminas ganaderas y generador de comprobantes de pago",
   "type": "module",

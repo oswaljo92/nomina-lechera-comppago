@@ -485,6 +485,14 @@ table.tabla tfoot td {
 .botonera { display: grid; gap: 4px; }
 table.tabla td.botonera-nd { white-space: normal; }
 table.tabla-nd td.principal { min-width: 150px; }
+/* Encabezado fijo: el th ya es sticky, pero un contenedor con overflow-x
+   (tabla-envoltura) lo ancla a él y no a la página. Dándole a la tabla de ND
+   su propio scroll vertical, el encabezado queda visible al bajar. */
+.envoltura-nd { max-height: calc(100vh - 140px); overflow: auto; }
+.envoltura-nd table.tabla th { z-index: 2; box-shadow: inset 0 -1px 0 var(--borde); }
+/* Buscador de la tabla de ND: la mitad del ancho de la tabla. */
+.filtros .buscador.buscador-mitad { flex: 0 1 50%; max-width: 50%; }
+.botonera.botonera-fila { grid-template-columns: 1fr 1fr; }
 table.tabla td.botonera-nd .btn { width: 100%; }
 table.tabla td.sin-salto { white-space: nowrap; }
 .ayuda-atajos { margin: 4px 0 10px; line-height: 1.6; }
@@ -614,6 +622,8 @@ kbd {
   /* Botones de la tabla de ND: en tarjeta ocupan todo el ancho, repartidos
      en columnas iguales y más altos (fáciles de tocar), sin huecos. */
   .tabla-adaptable table.tabla-nd td.principal { min-width: 0; }
+  .envoltura-nd { max-height: none; overflow: visible; }
+  .filtros .buscador.buscador-mitad { flex: 1 1 100%; max-width: none; }
   .tabla-adaptable table.tabla td.botonera-nd {
     display: block;
     padding: 10px 12px;

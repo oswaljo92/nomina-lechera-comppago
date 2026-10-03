@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useApp } from '../../estado.tsx';
-import { Aviso, Modal, Pastilla, Tarjeta, Vacio } from '../../components/comunes.tsx';
+import { Aviso, Confirmar, Modal, Pastilla, Tarjeta, Vacio } from '../../components/comunes.tsx';
 import { ModalConceptoManual } from '../../components/ModalConceptoManual.tsx';
 import { ModalNotaDebito } from '../../components/ModalNotaDebito.tsx';
 import { ModalImportarNotaDebito } from '../../components/ModalImportarNotaDebito.tsx';
@@ -62,6 +62,7 @@ export function SeccionNotasDebito({
   const [progreso, setProgreso] = useState(false);
   const [seleccion, setSeleccion] = useState<Set<string>>(new Set());
   const [copiando, setCopiando] = useState<{ hechos: number; total: number } | null>(null);
+  const [aEliminar, setAEliminar] = useState<NotaDebitoImportada | null>(null);
 
   const registros = repo.registrosDeNomina(db, nomina.id);
   const tasas = repo.tasasMapa(db);
@@ -280,6 +281,7 @@ export function SeccionNotasDebito({
 
   const filasImportadas = repo.notasDebitoImportadasDeNomina(db, nomina.id);
   const filasImportadasOtro = otraNomina ? repo.notasDebitoImportadasDeNomina(db, otraNomina.id) : [];
+  const quitadas = repo.notasDebitoQuitadasDeNomina(db, nomina.id);
   const registroIdsUsados = new Set(
     [...filasImportadas, ...filasImportadasOtro].flatMap((f) => (f.registroId ? [f.registroId] : [])),
   );
@@ -393,7 +395,7 @@ export function SeccionNotasDebito({
         }
       >
         <div className="filtros">
-          <div className="buscador">
+          <div className="buscador buscador-mitad">
             <span className="lupa">🔍</span>
             <input
               type="text"
@@ -430,7 +432,7 @@ export function SeccionNotasDebito({
             calculados.
           </Vacio>
         ) : (
-          <div className="tabla-envoltura tabla-adaptable">
+          <div className="tabla-envoltura tabla-adaptable envoltura-nd">
             <table className="tabla tabla-nd">
               <thead>
                 <tr>
@@ -566,8 +568,15 @@ export function SeccionNotasDebito({
                           <button
                             className="btn chico peligro"
                             disabled={!puedo('nota-debito')}
+                            title="La saca del cálculo; queda abajo en «Notas de débito quitadas» para restaurarla"
                             onClick={() => {
-                              void repo.eliminarNotaDebitoImportada(db, usuario!, f.id).then(() => cambiado());
+                              void repo.quitarNotaDebitoImportada(db, usuario!, f.id).then(() => {
+                                cambiado();
+                                setMensaje({
+                                  nivel: 'ok',
+                                  texto: `Se quitó la nota de débito de ${registro?.leido.nombre ?? f.proveedorExcel}. Puedes restaurarla abajo, en «Notas de débito quitadas».`,
+                                });
+                              });
                             }}
                           >
                             Quitar
@@ -582,6 +591,101 @@ export function SeccionNotasDebito({
           </div>
         )}
       </Tarjeta>
+
+      {quitadas.length > 0 && (
+        <Tarjeta
+          titulo={`Notas de débito quitadas (${quitadas.length})`}
+          descripcion="No cuentan para ningún comprobante mientras estén aquí. «Restaurar» la vuelve a usar tal cual; «Eliminar» la borra para siempre."
+        >
+          <div className="tabla-envoltura tabla-adaptable">
+            <table className="tabla">
+              <thead>
+                <tr>
+                  <th>Proveedor</th>
+                  <th className="num">Litros</th>
+                  <th>Fecha ND</th>
+                  <th className="num">Bs. a Pagar x Dif.</th>
+                  <th>Quitada el</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {quitadas.map((f) => {
+                  const registro = registroDe(f);
+                  const codigo = registro ? registro.leido.codigo : f.codigoExcel;
+                  const litros = (f.tipo === 'leche' ? f.litrosEnviados : f.litrosTransportados) ?? 0;
+                  return (
+                    <tr key={f.id}>
+                      <td className="principal">
+                        <span className="nombre-prov">{registro ? registro.leido.nombre : f.proveedorExcel}</span>
+                        <div className="sub">
+                          {codigo ? `${codigo} · ` : ''}
+                          {f.tipo === 'leche' ? 'Leche' : 'Transporte'}
+                        </div>
+                      </td>
+                      <td className="num" data-etiqueta="Litros">{formatearEntero(litros)}</td>
+                      <td className="sin-salto" data-etiqueta="Fecha ND">{fechaAMostrar(f.fechaNota)}</td>
+                      <td className="num" data-etiqueta="Bs. a Pagar x Dif.">{montoComoExcel(f.centimos)}</td>
+                      <td className="sin-salto" data-etiqueta="Quitada el">
+                        {f.quitadaEn ? fechaAMostrar(f.quitadaEn.slice(0, 10)) : ''}
+                      </td>
+                      <td className="botonera-nd">
+                        <div className="botonera botonera-fila">
+                          <button
+                            className="btn chico primario"
+                            disabled={!puedo('nota-debito')}
+                            onClick={() => {
+                              void repo
+                                .restaurarNotaDebitoImportada(db, usuario!, f.id)
+                                .then(() => {
+                                  cambiado();
+                                  setMensaje({
+                                    nivel: 'ok',
+                                    texto: `Se restauró la nota de débito de ${registro?.leido.nombre ?? f.proveedorExcel}.`,
+                                  });
+                                })
+                                .catch((e: unknown) =>
+                                  setMensaje({
+                                    nivel: 'error',
+                                    texto: `No se pudo restaurar: ${e instanceof Error ? e.message : String(e)}`,
+                                  }),
+                                );
+                            }}
+                          >
+                            Restaurar
+                          </button>
+                          <button
+                            className="btn chico peligro"
+                            disabled={!puedo('nota-debito')}
+                            onClick={() => setAEliminar(f)}
+                          >
+                            Eliminar
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Tarjeta>
+      )}
+
+      {aEliminar && (
+        <Confirmar
+          titulo="Eliminar para siempre"
+          mensaje={`La nota de débito de «${registroDe(aEliminar)?.leido.nombre ?? aEliminar.proveedorExcel}» se borrará y ya no se podrá restaurar (solo volviendo a importar el Excel).`}
+          textoConfirmar="Eliminar"
+          peligro
+          alCerrar={() => setAEliminar(null)}
+          alConfirmar={() => {
+            const id = aEliminar.id;
+            setAEliminar(null);
+            void repo.eliminarNotaDebitoImportada(db, usuario!, id).then(() => cambiado());
+          }}
+        />
+      )}
 
       {importacion && (
         <ModalImportarNotaDebito

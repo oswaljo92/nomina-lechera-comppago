@@ -284,11 +284,13 @@ CREATE TABLE IF NOT EXISTS notas_debito_importadas (
   emparejamiento        TEXT NOT NULL CHECK (emparejamiento IN ('codigo','nombre','manual','pendiente')),
   usuario_id            TEXT NOT NULL,
   creado_en             TEXT NOT NULL,
-  actualizado_en        TEXT NOT NULL
+  actualizado_en        TEXT NOT NULL,
+  -- Fecha en que el usuario la quitó; NULL = vigente. Las quitadas no
+  -- cuentan para nada (ni ND ni emparejamiento) pero se pueden restaurar.
+  quitada_en            TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_ndi_nomina ON notas_debito_importadas(nomina_id);
--- Un registro solo puede tener UNA nota de débito importada vigente. SQLite
--- no cuenta NULLs como duplicados, así que las filas pendientes no chocan.
-CREATE UNIQUE INDEX IF NOT EXISTS idx_ndi_registro_unico
-  ON notas_debito_importadas(registro_id) WHERE registro_id IS NOT NULL;
+-- El índice único "una ND importada vigente por registro" se crea en
+-- BaseDatos.migrar, después de asegurar la columna quitada_en en bases
+-- viejas (idx_ndi_registro_vigente).
 `;

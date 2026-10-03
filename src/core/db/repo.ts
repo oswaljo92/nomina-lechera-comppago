@@ -1171,14 +1171,27 @@ function aNotaDebitoImportada(f: Fila): NotaDebitoImportada {
     difXLts: f['dif_x_lts'] === null ? null : Number(f['dif_x_lts']),
     centimos: Number(f['centimos']),
     emparejamiento: String(f['emparejamiento']) as NotaDebitoImportada['emparejamiento'],
+    quitadaEn: typeof f['quitada_en'] === 'string' ? f['quitada_en'] : null,
   };
 }
 
 export function notasDebitoImportadasDeNomina(db: BaseDatos, nominaId: string): NotaDebitoImportada[] {
   return db
-    .todos<Fila>('SELECT * FROM notas_debito_importadas WHERE nomina_id = ? ORDER BY creado_en', [
-      nominaId,
-    ])
+    .todos<Fila>(
+      'SELECT * FROM notas_debito_importadas WHERE nomina_id = ? AND quitada_en IS NULL ORDER BY creado_en',
+      [nominaId],
+    )
+    .map(aNotaDebitoImportada);
+}
+
+/** Las que el usuario quitó (más reciente primero): no cuentan para nada
+ * hasta que se restauren. */
+export function notasDebitoQuitadasDeNomina(db: BaseDatos, nominaId: string): NotaDebitoImportada[] {
+  return db
+    .todos<Fila>(
+      'SELECT * FROM notas_debito_importadas WHERE nomina_id = ? AND quitada_en IS NOT NULL ORDER BY quitada_en DESC',
+      [nominaId],
+    )
     .map(aNotaDebitoImportada);
 }
 
@@ -1196,7 +1209,7 @@ export function ndImportadaMapa(
             ndi.bs_x_lts_ajustado AS bs_x_lts_ajustado, ndi.dif_x_lts AS dif_x_lts
      FROM notas_debito_importadas ndi
      JOIN registros r ON r.id = ndi.registro_id
-     WHERE ndi.nomina_id = ? AND ndi.registro_id IS NOT NULL`,
+     WHERE ndi.nomina_id = ? AND ndi.registro_id IS NOT NULL AND ndi.quitada_en IS NULL`,
     [nominaId],
   );
   const num = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));
@@ -1264,7 +1277,7 @@ export async function guardarNotasDebitoImportadas(
             bs_x_lts_inicio, bs_x_lts_ajustado, dif_x_lts, centimos, emparejamiento,
             usuario_id, creado_en, actualizado_en)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(registro_id) WHERE registro_id IS NOT NULL DO UPDATE SET
+         ON CONFLICT(registro_id) WHERE registro_id IS NOT NULL AND quitada_en IS NULL DO UPDATE SET
            codigo_excel = excluded.codigo_excel,
            proveedor_excel = excluded.proveedor_excel,
            fabrica_excel = excluded.fabrica_excel,
@@ -1332,6 +1345,40 @@ export async function resolverNotaDebitoImportada(
   await registrarBitacora(db, autor, 'resolver-nota-debito-importada', 'registro', registroId, { id });
 }
 
+/** "Quitar": la fila deja de contar (el proveedor vuelve a su ND calculada
+ * o a ninguna) pero queda guardada para poder restaurarla. */
+export async function quitarNotaDebitoImportada(db: BaseDatos, autor: Autor, id: string): Promise<void> {
+  db.correr('UPDATE notas_debito_importadas SET quitada_en = ? WHERE id = ? AND quitada_en IS NULL', [
+    new Date().toISOString(),
+    id,
+  ]);
+  await registrarBitacora(db, autor, 'quitar-nota-debito-importada', 'nota_debito_importada', id, {});
+}
+
+/** Vuelve a poner vigente una ND quitada. Falla si su proveedor ya tiene
+ * otra ND importada vigente (p. ej. se reimportó el Excel después). */
+export async function restaurarNotaDebitoImportada(db: BaseDatos, autor: Autor, id: string): Promise<void> {
+  const fila = db.uno<Fila>('SELECT registro_id FROM notas_debito_importadas WHERE id = ?', [id]);
+  if (!fila) throw new Error('La nota de débito ya no existe.');
+  if (fila['registro_id'] !== null) {
+    const vigente = db.uno<Fila>(
+      'SELECT id FROM notas_debito_importadas WHERE registro_id = ? AND quitada_en IS NULL',
+      [fila['registro_id'] as string],
+    );
+    if (vigente) {
+      throw new Error(
+        'ese proveedor ya tiene otra nota de débito importada vigente. Quita esa primero si quieres usar esta.',
+      );
+    }
+  }
+  db.correr('UPDATE notas_debito_importadas SET quitada_en = NULL, actualizado_en = ? WHERE id = ?', [
+    new Date().toISOString(),
+    id,
+  ]);
+  await registrarBitacora(db, autor, 'restaurar-nota-debito-importada', 'nota_debito_importada', id, {});
+}
+
+/** Borrado definitivo (solo desde el apartado de quitadas). */
 export async function eliminarNotaDebitoImportada(db: BaseDatos, autor: Autor, id: string): Promise<void> {
   db.correr('DELETE FROM notas_debito_importadas WHERE id = ?', [id]);
   await registrarBitacora(db, autor, 'eliminar-nota-debito-importada', 'nota_debito_importada', id, {});
