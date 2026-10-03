@@ -51,14 +51,15 @@ fiscal · Folio …" en el pie; Ctrl+Shift+F / Ctrl+Shift+L (teclas reales)
 copiaron 2 imágenes y 2 nombres por separado; la tabla de ND no desborda en
 1150/1280/1440 px y en tarjeta reparte los botones a todo el ancho; el
 modal de emparejar usa el buscador de la app. Está commiteado y pusheado a
-`origin/master`, y compilado en `release/CompPago-1.10.0-windows.zip`.
+`origin/master`, y compilado en `release/CompPago-1.10.1-windows.zip`.
 
-**Versión actual: `1.10.0`** (1.10.0 = ND quitadas/restaurar, encabezado fijo y buscador a media tabla en Notas de Débito). Antes: (1.9.1 = columna Dif x Lts en "A Modo Informativo"; 1.9.2 = la ND independiente imprime la fecha de nota del Excel también cuando se arma sumando códigos/SAP, ver sección 3).
+**Versión actual: `1.10.1`** (1.10.1 = reimportar el Excel de ND reemplaza, ya no duplica; 1.10.0 = ND quitadas/restaurar, encabezado fijo y buscador a media tabla en Notas de Débito). Antes: (1.9.1 = columna Dif x Lts en "A Modo Informativo"; 1.9.2 = la ND independiente imprime la fecha de nota del Excel también cuando se arma sumando códigos/SAP, ver sección 3).
 
 Últimos commits:
 
 ```
-(este commit) ND importadas quitadas se pueden restaurar; encabezado fijo y buscador a la mitad en la tabla de ND; sube a 1.10.0
+(este commit) Reimportar ND reemplaza en vez de duplicar (conserva emparejamientos manuales); datos-escritorio restaura solo lo respaldado en ese build; sube a 1.10.1
+2a427b9 ND importadas quitadas se pueden restaurar; encabezado fijo y buscador a la mitad en la tabla de ND; sube a 1.10.0
 03e0a65 El build respalda y restaura release/win-unpacked/datos (antes lo borraba)
 9775bd9 La ND independiente muestra la fecha de nota del Excel también en ND sumadas por SAP/agrupadas (la factura no cambia); sube a 1.9.2
 4d46138 Agrega columna Dif x Lts a la tabla A Modo Informativo de la ND; sube a 1.9.1
@@ -84,6 +85,12 @@ respaldo viejo `Downloads/respaldo_comppago_2026-08-13.db`). Desde ahora
 `electron:build` corre `scripts/datos-escritorio.mjs guardar` antes (copia
 permanente con fecha en `release/respaldos-datos/`, ignorada por git) y
 `restaurar` después del zip (el zip sale SIN datos). No quitar esos pasos.
+`restaurar` solo devuelve el respaldo anotado por `guardar` EN ESE MISMO build
+(`release/respaldos-datos/.pendiente-restaurar`): si `datos/` estaba vacía a
+propósito no repone nada viejo. El 03/10/2026, a pedido del usuario, su base
+se movió (no se borró) a
+`release/respaldos-datos/2026-10-03T19-01-39-movida-para-restaurar/` para que
+la app arranque vacía y él restaure otra.
 
 Pendiente de decisión del usuario, no de código:
 
@@ -1054,6 +1061,25 @@ la tabla (aparte de descargar PDF/imagen), ambos botones pegados al nombre.
 - Al compilar, `datos-escritorio.mjs` respaldó y restauró la `lectorocr.db`
   que el usuario volvió a tener en win-unpacked (idéntica byte a byte tras el
   build).
+
+### Esta sesión (cont.): reimportar ND reemplaza, no duplica (1.10.1)
+
+- Causa del duplicado: el upsert solo chocaba por `registro_id`; las filas
+  pendientes (registro NULL) y las que quedaban emparejadas a otro registro
+  se insertaban de nuevo en cada importación.
+- `guardarNotasDebitoImportadas(db, autor, sesionNominaId, filas,
+  nominasAReemplazar)` ahora, dentro de la transacción, BORRA todas las ND
+  importadas VIGENTES de `nominasAReemplazar` (la UI pasa la nómina activa +
+  su hermana de la misma semana) y luego inserta las nuevas. Las quitadas no
+  se tocan. Devuelve `{ reemplazadas, manualesConservadas }` para el aviso.
+- Emparejamientos manuales previos se conservan: clave de fila =
+  tipo + proveedor + SAP + fábrica (normalizados); si la fila nueva queda
+  pendiente y su clave tenía un registro emparejado a mano (y ese registro no
+  lo usa ya otra fila nueva), se le reasigna con emparejamiento 'manual'.
+- Pruebas en test-core: importar 3 veces el mismo lote no duplica (pendientes
+  incluidas), informa cuántas reemplazó, y reimportar conserva el manual.
+  En el navegador: importar el Excel real 2 veces seguidas → 56 filas ambas
+  veces.
 
 ## 4. Intentos fallidos / notas técnicas
 

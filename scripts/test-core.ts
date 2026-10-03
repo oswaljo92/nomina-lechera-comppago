@@ -710,6 +710,45 @@ console.log(`\n${B}Nota de débito importada: quitar y restaurar${N}`);
   ok(!repo.notasDebitoQuitadasDeNomina(db, leche.id).some((f) => f.id === vigente.id), 'Eliminar la borra definitivamente');
   const nueva = repo.notasDebitoImportadasDeNomina(db, leche.id).find((f) => f.proveedorExcel === 'PRUEBA QUITAR')!;
   await repo.eliminarNotaDebitoImportada(db, admin, nueva.id);
+
+  // ── Reimportar REEMPLAZA (no duplica), también las pendientes ──
+  const pendiente = (nombre: string): repo.FilaNdImportadaAGuardar => ({
+    ...filaGuardar(5000),
+    registroId: null,
+    proveedorExcel: nombre,
+    sapExcel: '8888888',
+    emparejamiento: 'pendiente',
+  });
+  const lote = () => [filaGuardar(333300), pendiente('PENDIENTE UNO'), pendiente('PENDIENTE DOS')];
+  const vigentesAntes = repo.notasDebitoImportadasDeNomina(db, leche.id).length;
+  await repo.guardarNotasDebitoImportadas(db, admin, leche.id, lote());
+  await repo.guardarNotasDebitoImportadas(db, admin, leche.id, lote());
+  const r3 = await repo.guardarNotasDebitoImportadas(db, admin, leche.id, lote());
+  ok(
+    repo.notasDebitoImportadasDeNomina(db, leche.id).length === vigentesAntes + 3,
+    'Importar el mismo Excel 3 veces deja las filas una sola vez (pendientes incluidas)',
+    String(repo.notasDebitoImportadasDeNomina(db, leche.id).length),
+  );
+  ok(r3.reemplazadas === vigentesAntes + 3, 'Informa cuántas reemplazó', String(r3.reemplazadas));
+
+  // Emparejo a mano una pendiente y reimporto: el emparejamiento manual se conserva.
+  const pend = repo.notasDebitoImportadasDeNomina(db, leche.id).find((f) => f.proveedorExcel === 'PENDIENTE UNO')!;
+  await repo.resolverNotaDebitoImportada(db, admin, pend.id, grippi.id);
+  const r4 = await repo.guardarNotasDebitoImportadas(db, admin, leche.id, lote());
+  const trasReimportar = repo.notasDebitoImportadasDeNomina(db, leche.id).find((f) => f.proveedorExcel === 'PENDIENTE UNO')!;
+  ok(
+    trasReimportar.registroId === grippi.id && trasReimportar.emparejamiento === 'manual' && r4.manualesConservadas === 1,
+    'Reimportar conserva lo que se emparejó a mano',
+  );
+  ok(
+    repo.notasDebitoImportadasDeNomina(db, leche.id).filter((f) => f.proveedorExcel.startsWith('PENDIENTE')).length === 2,
+    'Sin duplicados tras conservar el manual',
+  );
+  for (const f of repo.notasDebitoImportadasDeNomina(db, leche.id)) {
+    if (f.proveedorExcel === 'PRUEBA QUITAR' || f.proveedorExcel.startsWith('PENDIENTE')) {
+      await repo.eliminarNotaDebitoImportada(db, admin, f.id);
+    }
+  }
 }
 
 // ═══ Nota de débito: mismo SAP + misma fábrica se suman ═══

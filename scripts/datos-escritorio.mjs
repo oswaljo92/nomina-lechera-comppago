@@ -10,10 +10,13 @@
  *   ...electron-builder + pack-desktop (el zip sale SIN datos)...
  *   node scripts/datos-escritorio.mjs restaurar  (al final)
  *
- * `guardar` deja además una copia permanente con fecha en
- * `release/respaldos-datos/`, que no se borra nunca sola. `restaurar` también
- * funciona si una compilación anterior falló a medias: vuelve a poner el
- * respaldo más reciente si `win-unpacked/datos` no existe.
+ * `guardar` deja una copia permanente con fecha en `release/respaldos-datos/`
+ * (nunca se borra sola) y anota cuál es en `.pendiente-restaurar`.
+ * `restaurar` devuelve SOLO esa copia anotada: si `datos/` estaba vacía a
+ * propósito (p. ej. el usuario pidió empezar sin base para restaurar otra),
+ * no hay nada anotado y no se vuelve a poner ningún respaldo viejo. Si una
+ * compilación falla a medias, la anotación queda y la siguiente `restaurar`
+ * la completa.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -22,6 +25,7 @@ import { fileURLToPath } from 'node:url';
 const raiz = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const datos = path.join(raiz, 'release', 'win-unpacked', 'datos');
 const respaldos = path.join(raiz, 'release', 'respaldos-datos');
+const anotacion = path.join(respaldos, '.pendiente-restaurar');
 
 const accion = process.argv[2];
 
@@ -37,18 +41,26 @@ if (accion === 'guardar') {
     const destino = path.join(respaldos, sello);
     fs.mkdirSync(destino, { recursive: true });
     fs.cpSync(datos, destino, { recursive: true });
+    fs.writeFileSync(anotacion, sello);
     console.log(`✔ Datos de la app respaldados en ${path.relative(raiz, destino)}`);
   }
 } else if (accion === 'restaurar') {
-  if (tieneArchivos(datos)) {
-    console.log('· release/win-unpacked/datos ya existe: no se toca.');
-  } else if (!tieneArchivos(respaldos)) {
-    console.log('· No hay respaldos de datos que restaurar.');
+  if (!fs.existsSync(anotacion)) {
+    console.log('· No se respaldaron datos en esta compilación: no hay nada que restaurar.');
   } else {
-    const ultimo = fs.readdirSync(respaldos).sort().at(-1);
-    fs.mkdirSync(datos, { recursive: true });
-    fs.cpSync(path.join(respaldos, ultimo), datos, { recursive: true });
-    console.log(`✔ Datos de la app restaurados desde ${path.join('release', 'respaldos-datos', ultimo)}`);
+    const sello = fs.readFileSync(anotacion, 'utf8').trim();
+    const origen = path.join(respaldos, sello);
+    if (tieneArchivos(datos)) {
+      console.log('· release/win-unpacked/datos ya tiene datos: no se toca.');
+    } else if (!tieneArchivos(origen)) {
+      console.error(`✘ No se encontró el respaldo ${sello} para restaurar.`);
+      process.exit(1);
+    } else {
+      fs.mkdirSync(datos, { recursive: true });
+      fs.cpSync(origen, datos, { recursive: true });
+      console.log(`✔ Datos de la app restaurados desde ${path.join('release', 'respaldos-datos', sello)}`);
+    }
+    fs.rmSync(anotacion);
   }
 } else {
   console.error('Uso: node scripts/datos-escritorio.mjs guardar|restaurar');

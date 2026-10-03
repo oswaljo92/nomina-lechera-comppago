@@ -715,11 +715,21 @@ export function SeccionNotasDebito({
                 emparejamiento: f.emparejamiento === 'sin-emparejar' ? 'pendiente' : f.emparejamiento,
               };
             });
-            void repo.guardarNotasDebitoImportadas(db, usuario, nomina.id, filas).then(() => {
-              cambiado();
-              setImportacion(null);
-              setMensaje({ nivel: 'ok', texto: `Se importaron ${filas.length} fila(s).` });
-            });
+            // Reimportar REEMPLAZA lo importado antes en esta semana (leche y
+            // transporte), nunca duplica. Ver guardarNotasDebitoImportadas.
+            const aReemplazar = otraNomina ? [nomina.id, otraNomina.id] : [nomina.id];
+            void repo
+              .guardarNotasDebitoImportadas(db, usuario, nomina.id, filas, aReemplazar)
+              .then(({ reemplazadas, manualesConservadas }) => {
+                cambiado();
+                setImportacion(null);
+                const partes = [`Se importaron ${filas.length} fila(s).`];
+                if (reemplazadas > 0) partes.push(`Reemplazaron a las ${reemplazadas} de la importación anterior.`);
+                if (manualesConservadas > 0) {
+                  partes.push(`Se conservaron ${manualesConservadas} emparejamiento(s) que habías hecho a mano.`);
+                }
+                setMensaje({ nivel: 'ok', texto: partes.join(' ') });
+              });
           }}
         />
       )}

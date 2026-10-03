@@ -1255,20 +1255,58 @@ export interface FilaNdImportadaAGuardar {
   bsXLtsAjustado: number | null;
   difXLts: number | null;
   centimos: number;
-  emparejamiento: 'codigo' | 'nombre' | 'pendiente';
+  emparejamiento: 'codigo' | 'nombre' | 'manual' | 'pendiente';
 }
 
-/** Guarda en lote una importación ya confirmada (filas emparejadas y
- * pendientes). Secuencial dentro de una transacción, como guardarNotaDebito,
- * por la bitácora encadenada. */
+/** Clave para reconocer "la misma fila del Excel" entre dos importaciones
+ * (el Excel no trae un id propio): tipo + proveedor + SAP + fábrica. */
+function claveFilaExcel(f: { tipo: string; proveedorExcel: string; sapExcel: string | null; fabricaExcel: string | null }): string {
+  const n = (t: string | null) => (t ?? '').trim().toUpperCase().replace(/s+/g, ' ');
+  return `${f.tipo}|${n(f.proveedorExcel)}|${n(f.sapExcel)}|${n(f.fabricaExcel)}`;
+}
+
+/**
+ * Guarda una importación ya confirmada REEMPLAZANDO la anterior: primero se
+ * borran todas las ND importadas vigentes de `nominasAReemplazar` (la nómina
+ * activa y su hermana de la misma semana) y luego se insertan las del Excel
+ * nuevo, así reimportar nunca duplica. Las QUITADAS no se tocan (siguen en su
+ * apartado). Los emparejamientos hechos A MANO en la importación anterior se
+ * conservan: si una fila del Excel nuevo queda pendiente pero es la misma
+ * fila (misma clave) que el usuario había emparejado a mano, se le vuelve a
+ * asignar ese proveedor. Secuencial dentro de una transacción, como
+ * guardarNotaDebito, por la bitácora encadenada.
+ */
 export async function guardarNotasDebitoImportadas(
   db: BaseDatos,
   autor: Autor,
   sesionNominaId: string,
-  filas: FilaNdImportadaAGuardar[],
-): Promise<void> {
-  await db.transaccionAsync(async () => {
+  filasNuevas: FilaNdImportadaAGuardar[],
+  nominasAReemplazar: string[] = [sesionNominaId],
+): Promise<{ reemplazadas: number; manualesConservadas: number }> {
+  return db.transaccionAsync(async () => {
     const ahora = new Date().toISOString();
+    const anteriores = nominasAReemplazar.flatMap((id) => notasDebitoImportadasDeNomina(db, id));
+
+    // Emparejamientos manuales previos, por clave de fila del Excel.
+    const manuales = new Map<string, string>();
+    for (const a of anteriores) {
+      if (a.emparejamiento === 'manual' && a.registroId) manuales.set(claveFilaExcel(a), a.registroId);
+    }
+    const usados = new Set(filasNuevas.flatMap((f) => (f.registroId ? [f.registroId] : [])));
+    let manualesConservadas = 0;
+    const filas = filasNuevas.map((f) => {
+      if (f.registroId) return f;
+      const registroId = manuales.get(claveFilaExcel(f));
+      if (!registroId || usados.has(registroId)) return f;
+      const registro = db.uno<Fila>('SELECT nomina_id FROM registros WHERE id = ?', [registroId]);
+      if (!registro) return f;
+      usados.add(registroId);
+      manualesConservadas++;
+      return { ...f, registroId, nominaId: String(registro['nomina_id']), emparejamiento: 'manual' as const };
+    });
+
+    for (const a of anteriores) db.correr('DELETE FROM notas_debito_importadas WHERE id = ?', [a.id]);
+
     for (const f of filas) {
       db.correr(
         `INSERT INTO notas_debito_importadas
@@ -1322,7 +1360,10 @@ export async function guardarNotasDebitoImportadas(
       filas: filas.length,
       emparejadas: filas.filter((f) => f.registroId !== null).length,
       pendientes: filas.filter((f) => f.registroId === null).length,
+      reemplazadas: anteriores.length,
+      manualesConservadas,
     });
+    return { reemplazadas: anteriores.length, manualesConservadas };
   });
 }
 
