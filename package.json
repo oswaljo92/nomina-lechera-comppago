@@ -12,7 +12,7 @@
     "check": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.scripts.json --noEmit",
     "test:parser": "node --experimental-strip-types scripts/test-parser.ts",
     "electron:dev": "concurrently -k \"vite\" \"wait-on tcp:5173 && electron .\"",
-    "electron:build": "npm run build && electron-builder --win dir && node scripts/pack-desktop.mjs",
+    "electron:build": "npm run build && node scripts/datos-escritorio.mjs guardar && electron-builder --win dir && node scripts/pack-desktop.mjs && node scripts/datos-escritorio.mjs restaurar",
     "test:core": "node scripts/test-core.ts"
   },
   "dependencies": {

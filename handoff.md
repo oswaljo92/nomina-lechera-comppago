@@ -58,7 +58,8 @@ modal de emparejar usa el buscador de la app. Está commiteado y pusheado a
 Últimos commits:
 
 ```
-(este commit) La ND independiente muestra la fecha de nota del Excel también en ND sumadas por SAP/agrupadas (la factura no cambia); sube a 1.9.2
+(este commit) El build respalda y restaura release/win-unpacked/datos (antes lo borraba)
+9775bd9 La ND independiente muestra la fecha de nota del Excel también en ND sumadas por SAP/agrupadas (la factura no cambia); sube a 1.9.2
 4d46138 Agrega columna Dif x Lts a la tabla A Modo Informativo de la ND; sube a 1.9.1
 b364514 Atajos configurables y copia múltiple, tabla "A Modo Informativo" en la ND, "Sin efecto fiscal", tabla ND reordenada, buscador al emparejar; sube a 1.9.0
 999dafd ND importada con los números exactos que muestra el Excel; botones copiar nombre/imagen; sube a 1.8.0
@@ -72,6 +73,16 @@ d2efde1 Pestañas Comprobantes/ND, columnas Vista-Config-Comprobante, import de 
 f61f0d7 Corrige boton ND en agrupados y ajustes de tabla (desborde/espaciado); sube a 1.3.1
 c4bb01c Interruptor unir/separar ND, agrupación de códigos del mismo tipo, selector de formato único; sube a 1.3.0
 ```
+
+**⚠ Datos de la app de escritorio (03/10/2026):** el usuario usa la app
+directamente desde `release/win-unpacked/CompPago.exe`, cuyos datos viven en
+`release/win-unpacked/datos/`. electron-builder borra `win-unpacked` entera
+en cada build, y así se perdió su base real al compilar la 1.9.2 (no había
+copia local; lo único recuperable es la Papelera de OneDrive en la web o el
+respaldo viejo `Downloads/respaldo_comppago_2026-08-13.db`). Desde ahora
+`electron:build` corre `scripts/datos-escritorio.mjs guardar` antes (copia
+permanente con fecha en `release/respaldos-datos/`, ignorada por git) y
+`restaurar` después del zip (el zip sale SIN datos). No quitar esos pasos.
 
 Pendiente de decisión del usuario, no de código:
 
