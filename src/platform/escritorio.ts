@@ -17,6 +17,8 @@ export interface PuenteEscritorio {
   rutaDb(): Promise<string>;
   guardarArchivo(nombre: string, bytes: Uint8Array): Promise<string | null>;
   abrirArchivo(extensiones: string[]): Promise<ArchivoAbierto | null>;
+  copiarTexto(texto: string): Promise<void>;
+  copiarImagenPng(bytes: Uint8Array): Promise<void>;
 }
 
 declare global {
@@ -64,6 +66,13 @@ export async function crearPlataformaEscritorio(puente: PuenteEscritorio): Promi
         return puente.guardarArchivo(nombre, bytes);
       },
       abrir: (accept) => puente.abrirArchivo(extensionesDe(accept)),
+    },
+
+    portapapeles: {
+      copiarTexto: (texto) => puente.copiarTexto(texto),
+      async copiarImagen(png) {
+        await puente.copiarImagenPng(new Uint8Array(await png.arrayBuffer()));
+      },
     },
   };
 }

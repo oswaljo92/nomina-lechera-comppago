@@ -43,25 +43,23 @@ tocar la factura de cada código.
 ## 2. Estado actual
 
 Todo está implementado, tipado sin errores (`npm run check`), pasa
-`test:core`/`test:parser` (con pruebas nuevas de `gruposNdPorSap`/
-`datosConNdPorSap`, incluida la mezcla leche+transporte), se probó a mano
-en el navegador con el Excel real del usuario (`entradas/ND CALCULADA.xlsx`,
-que no trae columna de código): el import que antes fallaba en todas las
-filas ahora funciona; "DIAMAGRO"/"DIAMAGRO, C.A." (mismo SAP, misma
-fábrica) se emparejaron correctamente por nombre tras el fix, y su ND
-combinada descargada mostró el total sumado (443.813,00 Bs) con el
-desglose "CÓDIGO 008169: 65.356,00 Bs" / "CÓDIGO 009120: 378.457,00 Bs";
-se confirmó que la factura individual de cada código sigue mostrando su
-propio monto (65.356,00 Bs), sin combinar litros/bruto. Está commiteado y
-pusheado a `origin/master`, y compilado en `release/CompPago-1.7.0-windows.zip`
-(`npm run electron:build` completo).
+`test:core`/`test:parser` (con pruebas nuevas de `decimalesDeFormato`/
+`redondearComoExcel`), se probó a mano en el navegador con el Excel real
+(`entradas/ND CALCULADA.xlsx`) y las nóminas `GAN0584_6`/`GAN0594_6`: la
+pestaña Notas de Débito muestra cada número exactamente como la vista del
+Excel (82.950, 12.779, 1.154.817; 0,850 / 680,999 / 703,577 / 22,578), y los
+botones 📋/🖼 junto al nombre copian el nombre y el PNG real de la factura
+(o de la ND en su pestaña). Está commiteado y pusheado a `origin/master`, y
+compilado en `release/CompPago-1.8.0-windows.zip` (`npm run electron:build`
+completo).
 
-**Versión actual: `1.7.0`** (subida en esta tanda, ver sección 3).
+**Versión actual: `1.8.0`** (subida en esta tanda, ver sección 3).
 
 Últimos commits:
 
 ```
-(este commit) Corrige import de Excel sin columna de código y emparejamiento por nombre; suma ND por SAP; sube a 1.7.0
+(este commit) ND importada con los números exactos que muestra el Excel; botones copiar nombre/imagen; sube a 1.8.0
+bff9260 Corrige import de Excel sin columna de código y emparejamiento por nombre; suma ND por SAP; sube a 1.7.0
 92ea542 Separa concepto manual de configuración de ND en Comprobantes generales; sube a 1.6.0
 fcf0bc8 Muestra siempre la fecha de factura en la factura; título "COMPROBANTE"; sube a 1.5.2
 8d54813 Redondea la ND al bolívar entero, no al céntimo; sube a 1.5.1
@@ -806,7 +804,7 @@ la nota de débito).
   fila; en modo tarjeta a 375px los 4 bloques de acciones (Vista / + /
   ⚙ / Comprobante) se ven con buen espacio, sin apretarse.
 
-### Esta sesión: import de Excel real corregido, emparejamiento por nombre corregido, suma de ND por SAP
+### Sesión anterior (11): import de Excel real corregido, emparejamiento por nombre corregido, suma de ND por SAP
 
 El usuario reportó que el Excel real de ND (`entradas/ND CALCULADA.xlsx`,
 generado por su propio proceso, no un archivo de prueba) daba error al
@@ -911,6 +909,52 @@ idénticos). Quedó definido así:
   (esas filas del Excel venían con la fecha en blanco, así que el parser
   las descarta correctamente con un aviso) — se cubrió con una prueba
   unitaria nueva en `scripts/test-core.ts` en su lugar.
+
+### Esta sesión: números exactos como el Excel + copiar nombre/imagen
+
+Pedido 1: al importar el Excel de ND, ver los números exactos de la vista
+del Excel. Causa: las celdas traen el valor crudo (ej. Bs. a Pagar
+82950,1575…) y el Excel solo lo MUESTRA redondeado por su formato
+(`#,##0` → 82.950); la app hacía `Math.ceil` y daba 82.951. Eso explica
+también que la ND sumada de DIAMAGRO saliera 443.813 en la sesión anterior:
+con los valores visibles del Excel son 65.355 + 378.456 = **443.811** (y la
+suma cruda es 443.811,10, coincide).
+
+- `src/core/db/notaDebitoExcel.ts`: nuevas `decimalesDeFormato(numFmt)`
+  (decimales del formato de la celda; null si "General") y
+  `redondearComoExcel(valor, dec)` (mitad hacia afuera del cero, con
+  `toPrecision(15)` contra el ruido de coma flotante). `celdaANumeroVisible`
+  lo aplica a TODAS las columnas numéricas y acepta celdas fórmula
+  (`{formula, result}`). `centimos` = valor visible × 100; solo si la celda
+  no tiene formato se mantiene el ceil al bolívar entero.
+- `src/core/parser/numeros.ts`: `formatearFijo(n, dec)` (decimales fijos
+  como Excel: 0,850 en vez de 0,85).
+- `SeccionNotasDebito.tsx`: la tabla suma columnas $/Lts·$/Flete, Bs x Lts
+  Inicio, Bs x Lts Ajustado y Dif x Lts (3 decimales); el monto se ve como
+  en el Excel (82.950, sin ",00" si es entero).
+- Las filas importadas ANTES de 1.8.0 conservan el monto viejo (ceil) en la
+  base: hay que volver a importar el Excel para corregirlas.
+
+Pedido 2: copiar el nombre del productor y copiar la imagen directo desde
+la tabla (aparte de descargar PDF/imagen), ambos botones pegados al nombre.
+
+- `src/platform/tipos.ts`: nueva sección `portapapeles` (`copiarTexto`,
+  `copiarImagen(png)`). Web → `navigator.clipboard`; escritorio → IPC
+  `portapapeles:texto`/`portapapeles:imagen` en `electron/main.cjs`
+  (`clipboard.writeText`, `clipboard.writeImage(nativeImage.createFromBuffer)`),
+  expuestos en `electron/preload.cjs`.
+- `src/ui/components/NombreConCopia.tsx` (nuevo): nombre + 📋 + 🖼, marca ✓
+  1,5 s al copiar; los errores van al aviso de la pantalla. CSS
+  `.nombre-con-copia`/`.botones-copia`/`.btn.copiar`: los dos botones van en
+  un grupo `nowrap`, así en nombres largos bajan juntos.
+- Comprobantes generales: 🖼 copia la FACTURA (`unidadDe`, PNG escala 3).
+  Notas de Débito: 🖼 copia la ND (`unidadParaNd`, respeta la suma por
+  SAP); solo en filas emparejadas del tipo de la nómina activa. Copiar
+  cuenta como entrega en `registrarDescargas` (archivo "… (copiado)").
+- Verificación: el panel de navegador de pruebas niega el permiso de
+  portapapeles (se vio el aviso de error correcto); con el portapapeles
+  simulado se confirmó el texto exacto y un PNG real (1786×1617 factura,
+  1786×1440 ND). En Electron se usa el portapapeles nativo, sin permisos.
 
 ## 4. Intentos fallidos / notas técnicas
 

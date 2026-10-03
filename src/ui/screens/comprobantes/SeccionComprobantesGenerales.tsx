@@ -6,6 +6,7 @@ import { ModalNotaDebito } from '../../components/ModalNotaDebito.tsx';
 import { ModalVinculo } from '../../components/ModalVinculo.tsx';
 import { ModalGrupoMismoTipo } from '../../components/ModalGrupoMismoTipo.tsx';
 import { VistaPrevia } from '../../components/VistaPrevia.tsx';
+import { NombreConCopia } from '../../components/NombreConCopia.tsx';
 import * as repo from '../../../core/db/repo.ts';
 import {
   construirComprobante,
@@ -297,6 +298,31 @@ export function SeccionComprobantesGenerales({
     }
   }
 
+  /** Genera la imagen (PNG) de la factura de esta fila y la deja en el
+   * portapapeles. Cuenta como una entrega más en el historial de descargas. */
+  async function copiarImagenFactura(r: (typeof registros)[number]) {
+    if (!usuario) return;
+    setMensaje(null);
+    const u = unidadDe(r);
+    const [archivo] = await generarComprobantes(
+      [{ registroIds: u.registroIds, datos: u.datos, numeroNomina: nomina.numero }],
+      { formato: 'png', opciones },
+    );
+    if (!archivo) return;
+    await plataforma.portapapeles.copiarImagen(archivo.blob);
+    await repo.registrarDescargas(
+      db,
+      usuario,
+      archivo.registroIds.map((registroId) => ({
+        registroId,
+        folio: archivo.folio,
+        formato: 'png' as const,
+        archivo: `${archivo.nombre} (copiado)`,
+      })),
+    );
+    cambiado();
+  }
+
   /** true si la unidad (individual, combinada o agrupada) tiene una ND calculable. */
   function ndAplica(datos: DatosComprobante): boolean {
     if (datos.notaDebitoAgrupada) return datos.notaDebitoAgrupada.aplica;
@@ -513,7 +539,13 @@ export function SeccionComprobantesGenerales({
                       />
                     </td>
                     <td className="principal">
-                      <div className="nombre-prov">{datos.proveedor.nombre}</div>
+                      <NombreConCopia
+                        nombre={datos.proveedor.nombre}
+                        tituloImagen="Copiar factura como imagen"
+                        alCopiarImagen={() => copiarImagenFactura(r)}
+                        imagenDeshabilitada={progreso !== null || !puedo('generar-comprobante')}
+                        alError={(texto) => setMensaje({ nivel: 'error', texto })}
+                      />
                       <div className="sub">
                         {r.leido.codigo} · ruta {r.leido.ruta}
                         {r.manuales.length > 0 && ` · ${r.manuales.length} concepto(s) manual(es)`}

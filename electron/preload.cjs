@@ -20,4 +20,7 @@ contextBridge.exposeInMainWorld('lectorocr', {
 
   guardarArchivo: (nombre, bytes) => ipcRenderer.invoke('archivo:guardar', nombre, bytes),
   abrirArchivo: (extensiones) => ipcRenderer.invoke('archivo:abrir', extensiones),
+
+  copiarTexto: (texto) => ipcRenderer.invoke('portapapeles:texto', texto),
+  copiarImagenPng: (bytes) => ipcRenderer.invoke('portapapeles:imagen', bytes),
 });

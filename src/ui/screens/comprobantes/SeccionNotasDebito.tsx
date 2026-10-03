@@ -14,7 +14,18 @@ import { construirComprobanteAgrupado } from '../../../core/receipt/comprobanteA
 import { datosConNdPorSap, gruposNdPorSap } from '../../../core/receipt/notaDebitoSap.ts';
 import { OPCIONES_DIBUJO } from '../../../core/receipt/dibujo.ts';
 import { generarNotasDebito, type Formato, type ItemAGenerar } from '../../salida/generar.ts';
-import { formatearBs, formatearEntero } from '../../../core/parser/numeros.ts';
+import { formatearBs, formatearEntero, formatearFijo } from '../../../core/parser/numeros.ts';
+import { NombreConCopia } from '../../components/NombreConCopia.tsx';
+
+/** Igual que la vista del Excel: 3 decimales en precios/tasas, vacío si no hay dato. */
+function celdaDecimal(n: number | null): string {
+  return n === null ? '' : formatearFijo(n, 3);
+}
+
+/** Monto como lo muestra el Excel ("82.950"); con céntimos solo si los trae. */
+function montoComoExcel(centimos: number): string {
+  return centimos % 100 === 0 ? formatearFijo(centimos / 100, 0) : formatearBs(centimos);
+}
 import type { NotaDebitoImportada, TipoNomina } from '../../../core/types.ts';
 import type { FechasNomina } from '../Comprobantes.tsx';
 
@@ -207,6 +218,31 @@ export function SeccionNotasDebito({
     }
   }
 
+  /** Imagen (PNG) de la ND de esta fila al portapapeles; cuenta como entrega. */
+  async function copiarImagenNd(registro: (typeof registros)[number]) {
+    if (!usuario) return;
+    setMensaje(null);
+    const u = unidadParaNd(registro);
+    if (!ndAplica(u.datos)) throw new Error('este proveedor no tiene una nota de débito calculable.');
+    const [archivo] = await generarNotasDebito(
+      [{ registroIds: u.registroIds, datos: u.datos, numeroNomina: nomina.numero }],
+      { formato: 'png', opciones: OPCIONES_DIBUJO },
+    );
+    if (!archivo) return;
+    await plataforma.portapapeles.copiarImagen(archivo.blob);
+    await repo.registrarDescargas(
+      db,
+      usuario,
+      archivo.registroIds.map((registroId) => ({
+        registroId,
+        folio: archivo.folio,
+        formato: 'png' as const,
+        archivo: `${archivo.nombre} (copiado)`,
+      })),
+    );
+    cambiado();
+  }
+
   const filasImportadas = repo.notasDebitoImportadasDeNomina(db, nomina.id);
   const filasImportadasOtro = otraNomina ? repo.notasDebitoImportadasDeNomina(db, otraNomina.id) : [];
   const registroIdsUsados = new Set(
@@ -287,6 +323,10 @@ export function SeccionNotasDebito({
                   <th>Proveedor</th>
                   <th>Código</th>
                   <th className="num">Litros</th>
+                  <th className="num">$/Lts · $/Flete</th>
+                  <th className="num">Bs x Lts Inicio</th>
+                  <th className="num">Bs x Lts Ajustado</th>
+                  <th className="num">Dif x Lts</th>
                   <th>Fecha ND</th>
                   <th className="num">Bs. a Pagar x Dif.</th>
                   <th>Estado</th>
@@ -302,13 +342,31 @@ export function SeccionNotasDebito({
                   return (
                     <tr key={f.id}>
                       <td className="principal">
-                        {registro ? registro.leido.nombre : <span className="tenue">{f.proveedorExcel}</span>}
+                        {registro ? (
+                          <NombreConCopia
+                            nombre={registro.leido.nombre}
+                            tituloImagen="Copiar nota de débito como imagen"
+                            alCopiarImagen={
+                              f.tipo === nomina.tipo ? () => copiarImagenNd(registro) : undefined
+                            }
+                            imagenDeshabilitada={progreso || !puedo('generar-comprobante')}
+                            alError={(texto) => setMensaje({ nivel: 'error', texto })}
+                          />
+                        ) : (
+                          <span className="tenue">{f.proveedorExcel}</span>
+                        )}
                         <div className="sub">{f.tipo === 'leche' ? 'Leche' : 'Transporte'}</div>
                       </td>
                       <td data-etiqueta="Código">{registro ? registro.leido.codigo : f.codigoExcel}</td>
                       <td className="num" data-etiqueta="Litros">{formatearEntero(litros)}</td>
+                      <td className="num" data-etiqueta={f.tipo === 'leche' ? '$/Lts' : '$/Flete'}>
+                        {celdaDecimal(f.tipo === 'leche' ? f.precioUsdLts : f.precioUsdFlete)}
+                      </td>
+                      <td className="num" data-etiqueta="Bs x Lts Inicio">{celdaDecimal(f.bsXLtsInicio)}</td>
+                      <td className="num" data-etiqueta="Bs x Lts Ajustado">{celdaDecimal(f.bsXLtsAjustado)}</td>
+                      <td className="num" data-etiqueta="Dif x Lts">{celdaDecimal(f.difXLts)}</td>
                       <td data-etiqueta="Fecha ND">{f.fechaNota}</td>
-                      <td className="num" data-etiqueta="Bs. a Pagar x Dif.">{formatearBs(f.centimos)}</td>
+                      <td className="num" data-etiqueta="Bs. a Pagar x Dif.">{montoComoExcel(f.centimos)}</td>
                       <td data-etiqueta="Estado">
                         <Pastilla tono={etiqueta.tono}>{etiqueta.texto}</Pastilla>
                       </td>

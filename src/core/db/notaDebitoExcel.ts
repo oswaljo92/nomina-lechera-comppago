@@ -19,9 +19,11 @@ export interface FilaNdExcel {
   bsXLtsInicio: number | null;
   bsXLtsAjustado: number | null;
   difXLts: number | null;
-  /** "Bs. a Pagar x Dif." redondeado hacia arriba al bolívar entero (sin
-   * centavos) y convertido a céntimos — misma convención que
-   * `calcularNotaDebito`. */
+  /** "Bs. a Pagar x Dif." en céntimos, exactamente como Excel lo muestra
+   * según el formato de la celda (ej. "#,##0" -> bolívar entero, redondeo
+   * normal de Excel). Solo si la celda no tiene formato se redondea hacia
+   * arriba al bolívar entero (convención de `calcularNotaDebito`). Todas las
+   * demás columnas numéricas también se guardan como Excel las muestra. */
   centimos: number;
   tipo: TipoNomina;
 }
@@ -74,6 +76,48 @@ function celdaANumero(valor: unknown): number | null {
     if (Number.isFinite(n)) return n;
   }
   return null;
+}
+
+/**
+ * Cuántos decimales muestra un formato numérico de Excel ("#,##0" -> 0,
+ * "0.000" -> 3). Null si es "General"/sin formato (Excel muestra el valor
+ * tal cual). Solo mira la primera sección (positivos) del formato.
+ */
+export function decimalesDeFormato(numFmt: string | undefined): number | null {
+  if (!numFmt || /^general$/i.test(numFmt.trim())) return null;
+  const seccion = numFmt
+    .split(';')[0]!
+    .replace(/"[^"]*"/g, '') // textos literales
+    .replace(/\[[^\]]*\]/g, '') // colores / condiciones
+    .replace(/\\./g, ''); // caracteres escapados
+  if (!/[0#?]/.test(seccion)) return null;
+  const m = seccion.match(/\.([0#?]+)/);
+  return m ? m[1]!.length : 0;
+}
+
+/** Redondea como Excel al mostrar: mitad hacia afuera del cero, corrigiendo
+ * el ruido de coma flotante (82950.15751 -> 82950; 22.5776150000004 -> 22.578). */
+export function redondearComoExcel(valor: number, decimales: number): number {
+  const factor = 10 ** decimales;
+  const escalado = Number((Math.abs(valor) * factor).toPrecision(15));
+  return (Math.sign(valor) * Math.round(escalado)) / factor;
+}
+
+/** El número tal como Excel lo MUESTRA en la celda (según su formato), no el
+ * valor crudo con todos los decimales que arrastra de otras fórmulas. */
+function celdaANumeroVisible(celda: ExcelJS.Cell): number | null {
+  const crudo = celdaANumero(valorDeCelda(celda.value));
+  if (crudo === null) return null;
+  const decimales = decimalesDeFormato(celda.numFmt);
+  return decimales === null ? crudo : redondearComoExcel(crudo, decimales);
+}
+
+/** Si la celda es una fórmula, su resultado guardado; si no, el valor. */
+function valorDeCelda(valor: unknown): unknown {
+  if (valor && typeof valor === 'object' && !(valor instanceof Date) && 'result' in valor) {
+    return (valor as { result: unknown }).result;
+  }
+  return valor;
 }
 
 function celdaATexto(valor: unknown): string | null {
@@ -244,8 +288,8 @@ export async function leerLibroNotasDebitoImportadas(
       return;
     }
 
-    const litrosEnviados = celdaANumero(fila.getCell(colLitrosEnviados!).value);
-    const litrosTransportados = celdaANumero(fila.getCell(colLitrosTransportados!).value);
+    const litrosEnviados = celdaANumeroVisible(fila.getCell(colLitrosEnviados!));
+    const litrosTransportados = celdaANumeroVisible(fila.getCell(colLitrosTransportados!));
     const tieneLeche = litrosEnviados !== null && litrosEnviados > 0;
     const tieneTransporte = litrosTransportados !== null && litrosTransportados > 0;
     if (tieneLeche === tieneTransporte) {
@@ -255,7 +299,8 @@ export async function leerLibroNotasDebitoImportadas(
       return;
     }
 
-    const bsAPagar = celdaANumero(fila.getCell(colBsAPagar!).value);
+    const celdaBsAPagar = fila.getCell(colBsAPagar!);
+    const bsAPagar = celdaANumeroVisible(celdaBsAPagar);
     if (bsAPagar === null) {
       errores.push(`Fila ${numeroFila} (${proveedorExcel}): "Bs. a Pagar x Dif." no es un número válido.`);
       return;
@@ -268,13 +313,19 @@ export async function leerLibroNotasDebitoImportadas(
       sapExcel: colSap ? celdaATexto(fila.getCell(colSap).value) : null,
       proveedorExcel,
       litrosEnviados,
-      precioUsdLts: colPrecioLts ? celdaANumero(fila.getCell(colPrecioLts).value) : null,
+      precioUsdLts: colPrecioLts ? celdaANumeroVisible(fila.getCell(colPrecioLts)) : null,
       litrosTransportados,
-      precioUsdFlete: colPrecioFlete ? celdaANumero(fila.getCell(colPrecioFlete).value) : null,
-      bsXLtsInicio: colBsInicio ? celdaANumero(fila.getCell(colBsInicio).value) : null,
-      bsXLtsAjustado: colBsAjustado ? celdaANumero(fila.getCell(colBsAjustado).value) : null,
-      difXLts: colDif ? celdaANumero(fila.getCell(colDif).value) : null,
-      centimos: Math.ceil(bsAPagar) * 100,
+      precioUsdFlete: colPrecioFlete ? celdaANumeroVisible(fila.getCell(colPrecioFlete)) : null,
+      bsXLtsInicio: colBsInicio ? celdaANumeroVisible(fila.getCell(colBsInicio)) : null,
+      bsXLtsAjustado: colBsAjustado ? celdaANumeroVisible(fila.getCell(colBsAjustado)) : null,
+      difXLts: colDif ? celdaANumeroVisible(fila.getCell(colDif)) : null,
+      // Si la celda tiene formato, el monto es exactamente el que Excel
+      // muestra (ya redondeado por celdaANumeroVisible). Sin formato
+      // ("General") se mantiene la convención de bolívar entero hacia arriba.
+      centimos:
+        decimalesDeFormato(celdaBsAPagar.numFmt) === null
+          ? Math.ceil(bsAPagar) * 100
+          : Math.round(bsAPagar * 100),
       tipo: tieneLeche ? 'leche' : 'transporte',
     });
   });

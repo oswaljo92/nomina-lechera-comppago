@@ -71,6 +71,16 @@ export function formatearDecimal(n: number, dec = 2): string {
   return `${negativo ? '-' : ''}${agruparMiles(entero)},${decimales}`;
 }
 
+/** Formatea con exactamente `dec` decimales, como lo muestra Excel con un
+ * formato fijo ("0.000"): 0.85 -> "0,850", 82950 -> "82.950" (dec = 0). */
+export function formatearFijo(n: number, dec: number): string {
+  if (!Number.isFinite(n)) return '—';
+  const negativo = n < 0;
+  const [entero, decimales] = Math.abs(n).toFixed(dec).split('.');
+  const enteroAgrupado = agruparMiles(Number(entero));
+  return `${negativo ? '-' : ''}${enteroAgrupado}${decimales ? `,${decimales}` : ''}`;
+}
+
 function agruparMiles(n: number): string {
   const s = String(n);
   let salida = '';

@@ -449,6 +449,23 @@ table.tabla th.compacta, table.tabla td.compacta {
   padding-right: 4px;
 }
 table.tabla .nombre-prov { font-weight: 600; }
+/* Nombre + botones 📋 (copiar nombre) y 🖼 (copiar imagen) pegados a él. */
+.nombre-con-copia .nombre-prov { margin-right: 4px; }
+/* Los dos botones viajan juntos: si el nombre es largo, bajan en pareja. */
+.nombre-con-copia .botones-copia {
+  display: inline-flex;
+  gap: 2px;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.btn.copiar {
+  padding: 1px 5px;
+  font-size: 12px;
+  line-height: 1.3;
+  min-height: 0;
+  opacity: 0.65;
+}
+.btn.copiar:hover:not(:disabled), .btn.copiar.hecho { opacity: 1; }
 table.tabla .sub { font-size: 11.5px; color: var(--texto-2); font-family: var(--sans); }
 table.tabla tfoot td {
   font-weight: 700;

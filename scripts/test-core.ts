@@ -38,7 +38,7 @@ import {
 } from '../src/core/calc/calcular.ts';
 import { construirComprobanteAgrupado } from '../src/core/receipt/comprobanteAgrupado.ts';
 import { construirComprobante, type ContextoComprobante } from '../src/core/receipt/comprobante.ts';
-import { normalizarCodigo } from '../src/core/db/notaDebitoExcel.ts';
+import { decimalesDeFormato, normalizarCodigo, redondearComoExcel } from '../src/core/db/notaDebitoExcel.ts';
 import { datosConNdPorSap, gruposNdPorSap } from '../src/core/receipt/notaDebitoSap.ts';
 import type { NotaDebitoImportada } from '../src/core/types.ts';
 import { sha256DeBytes } from '../src/core/auth/hash.ts';
@@ -597,6 +597,14 @@ console.log(`\n${B}Nota de débito importada${N}`);
   ok(normalizarCodigo('9119') === normalizarCodigo('009119'), 'Normaliza ceros a la izquierda');
   ok(normalizarCodigo('569') !== normalizarCodigo('5690'), 'No confunde códigos de distinto valor');
   ok(normalizarCodigo('000000') === '0', 'Un código de puros ceros no rompe (cae a "0")');
+  ok(decimalesDeFormato('#,##0') === 0, 'Formato "#,##0" -> 0 decimales');
+  ok(decimalesDeFormato('0.000') === 3, 'Formato "0.000" -> 3 decimales');
+  ok(decimalesDeFormato('#,##0.000') === 3, 'Formato "#,##0.000" -> 3 decimales');
+  ok(decimalesDeFormato('General') === null && decimalesDeFormato(undefined) === null, 'Sin formato -> valor crudo');
+  ok(redondearComoExcel(82950.1575100001, 0) === 82950, 'Monto crudo 82950,157 se ve 82.950 (no 82.951)');
+  ok(redondearComoExcel(22.577615000000037, 3) === 22.578, 'Dif crudo 22,5776150...04 se ve 22,578');
+  ok(redondearComoExcel(1154816.5, 0) === 1154817, 'Mitad redondea hacia arriba como Excel');
+  ok(redondearComoExcel(-0.0005, 3) === -0.001, 'Negativos: mitad hacia afuera del cero');
 
   const tasasVacias = new Map<string, number>();
   const sinImport = new Map<string, { centimos: number; fechaNota: string }>();

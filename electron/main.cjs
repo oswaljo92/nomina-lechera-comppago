@@ -17,7 +17,7 @@
  *    carpeta a un pendrive y se lleva con todo su histórico.
  */
 
-const { app, BrowserWindow, ipcMain, dialog, protocol, net, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, protocol, net, shell, clipboard, nativeImage } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs/promises');
 const fsSync = require('node:fs');
@@ -194,6 +194,16 @@ ipcMain.handle('archivo:guardar', async (evento, nombre, bytes) => {
   if (resultado.canceled || !resultado.filePath) return null;
   await fs.writeFile(resultado.filePath, Buffer.from(bytes));
   return resultado.filePath;
+});
+
+ipcMain.handle('portapapeles:texto', (_evento, texto) => {
+  clipboard.writeText(String(texto));
+});
+
+ipcMain.handle('portapapeles:imagen', (_evento, bytesPng) => {
+  const imagen = nativeImage.createFromBuffer(Buffer.from(bytesPng));
+  if (imagen.isEmpty()) throw new Error('No se pudo leer la imagen para copiarla.');
+  clipboard.writeImage(imagen);
 });
 
 ipcMain.handle('archivo:abrir', async (evento, extensiones) => {

@@ -37,4 +37,12 @@ export interface Plataforma {
     /** Pide un archivo al usuario. `accept` en formato de input file. */
     abrir(accept: string): Promise<ArchivoAbierto | null>;
   };
+
+  /** Portapapeles del sistema, para pegar directo en WhatsApp, correo,
+   * etc. sin pasar por un archivo descargado. */
+  portapapeles: {
+    copiarTexto(texto: string): Promise<void>;
+    /** `png` debe ser una imagen PNG. */
+    copiarImagen(png: Blob): Promise<void>;
+  };
 }
